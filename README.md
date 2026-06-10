@@ -1,3 +1,29 @@
+# RTL8127ATF driver for macOS (Apple Silicon)
+
+This is a fork of [Mieze/RTL812xLucy](https://github.com/Mieze/RTL812xLucy) by
+Laura Müller, extended with experimental support for the Realtek **RTL8127**
+10GbE controller, in particular the **RTL8127ATF** fiber (SFP+) variant, and
+with an **arm64e** build for Apple Silicon Macs (PCIe slot or Thunderbolt
+enclosure, `IOPCITunnelCompatible`). The hardware-specific code is ported from
+Realtek's official `r8127` Linux driver. GPLv2, like the original.
+
+Status: builds universal (x86_64 + arm64e), all symbols resolve against the
+macOS 26.5 arm64e kernel; not yet validated on real RTL8127 hardware.
+
+Build: `xcodebuild -project RTL812xLucy.xcodeproj -target RTL812xLucy
+-configuration Release build CODE_SIGNING_ALLOWED=NO`
+
+Loading an unsigned development kext on Apple Silicon requires reduced
+security: boot into recoveryOS, Startup Security Utility → Reduced Security +
+allow user management of kernel extensions, plus `csrutil disable` for an
+unsigned build. Then copy the kext to `/Library/Extensions`, approve it in
+System Settings → Privacy & Security and reboot.
+
+The `KernelSPI/` overlay headers re-insert the IONetworkingFamily polled-mode
+SPI that Apple strips from the public SDK (see `KernelSPI/gen_spi_headers.py`).
+
+---
+
 # RTL812xLucy
 
 A new macOS driver for the Realtek RTL812x family of 2.5GBit and 5Gbit Ethernet Controllers
