@@ -1,5 +1,8 @@
 name: Build kext
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [rtl8127, master]
