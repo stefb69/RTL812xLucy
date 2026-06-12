@@ -5,8 +5,7 @@
  *
  * User-space counterpart of the RTL812xLucy kext in this repository.
  * The hardware logic (chip detection, fiber SerDes bring-up, MCU tables)
- * is ported from the same vendor r8127 Linux driver; see docs/DEXT-PORT.md
- * for the porting map.
+ * is compiled verbatim from the kext sources; see docs/DEXT-PORT.md.
  */
 
 #ifndef RTL8127Driver_h
@@ -14,6 +13,7 @@
 
 #include <Availability.h>
 #include <DriverKit/IOService.iig>
+#include <DriverKit/IOInterruptDispatchSource.iig>
 #include <NetworkingDriverKit/IOUserNetworkEthernet.iig>
 
 class RTL8127Driver : public IOUserNetworkEthernet
@@ -25,11 +25,16 @@ public:
     virtual kern_return_t Start(IOService *provider) override;
     virtual kern_return_t Stop(IOService *provider) override;
 
+    /* MSI interrupt handler. */
+    virtual void InterruptOccurred(OSAction *action,
+                                   uint64_t count,
+                                   uint64_t time) TYPE(IOInterruptDispatchSource::InterruptOccurred);
+
     /*
-     * Abstract interface of IOUserNetworkEthernet. The non-deprecated
-     * replacements (setInterfaceEnable & co.) are LOCALONLY methods that we
-     * override in C++ directly; these RPC variants are still pure virtual
-     * and must exist.
+     * Abstract RPC interface of IOUserNetworkEthernet. The non-deprecated
+     * replacements (setInterfaceEnable & co.) are LOCALONLY methods
+     * overridden below; these RPC variants are still pure virtual and must
+     * exist.
      */
     virtual kern_return_t SetInterfaceEnable(bool isEnable) override;
     virtual kern_return_t SetPromiscuousModeEnable(bool enable) override;
@@ -42,6 +47,18 @@ public:
     virtual kern_return_t GetMaxTransferUnit(uint32_t *mtu) override LOCAL;
     virtual kern_return_t SetHardwareAssists(uint32_t hardwareAssists) override LOCAL;
     virtual kern_return_t GetHardwareAssists(uint32_t *hardwareAssists) override LOCAL;
+
+    /* Modern NDK 2.1 LOCALONLY interface. */
+    virtual IOReturn setInterfaceEnable(bool enable) override LOCALONLY;
+    virtual IOReturn setPromiscuousModeEnable(bool enable) override LOCALONLY;
+    virtual IOReturn setAllMulticastModeEnable(bool enable) override LOCALONLY;
+    virtual IOReturn getSupportedMediaArray(MediaWord *mediaArray,
+                                            uint32_t *mediaCount) override LOCALONLY;
+    virtual IOReturn handleChosenMedia(MediaWord chosenMedia) override LOCALONLY;
+    virtual IOReturn setMaxTransferUnit(uint32_t mtu) override LOCALONLY;
+    virtual uint32_t getMaxTransferUnit() override LOCALONLY;
+    virtual uint32_t getHardwareAssists() override LOCALONLY;
+    virtual IOReturn getHardwareAddress(ether_addr_t *addr) override LOCALONLY;
 };
 
 #endif /* RTL8127Driver_h */
