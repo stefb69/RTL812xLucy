@@ -7,8 +7,11 @@ with an **arm64e** build for Apple Silicon Macs (PCIe slot or Thunderbolt
 enclosure, `IOPCITunnelCompatible`). The hardware-specific code is ported from
 Realtek's official `r8127` Linux driver. GPLv2, like the original.
 
-Status: builds universal (x86_64 + arm64e), all symbols resolve against the
-macOS 26.5 arm64e kernel; not yet validated on real RTL8127 hardware.
+Status: **working on real hardware**. Validated on an M5 Mac (macOS 26.5) with
+an RTL8127ATF in a Thunderbolt enclosure, SFP+ DAC to a 10G switch: DHCP,
+10Gbase-T full duplex, multi-GB transfers in both directions with zero errors.
+Builds universal (x86_64 + arm64e). Note that macOS has no SFP+/DAC medium
+type, so the link is reported as "10GBase-T" — cosmetic only.
 
 Build: `xcodebuild -project RTL812xLucy.xcodeproj -target RTL812xLucy
 -configuration Release build CODE_SIGNING_ALLOWED=NO`
