@@ -36,6 +36,15 @@ jobs:
           lipo -archs build/Release/RTL812xLucy.kext/Contents/MacOS/RTL812xLucy
           lipo -archs build/Release/RTL812xLucy.kext/Contents/MacOS/RTL812xLucy | grep -q arm64e
 
+      - name: Build dext skeleton (RTL8127Dext)
+        run: |
+          set -o pipefail
+          xcodebuild -project RTL8127Dext/RTL8127Dext.xcodeproj \
+                     -target RTL8127Dext \
+                     -configuration Release \
+                     build \
+                     CODE_SIGNING_ALLOWED=NO | tail -15
+
       - name: Package
         run: |
           cd build/Release

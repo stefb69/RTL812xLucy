@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * RTL8127Driver.iig -- DriverKit (dext) driver for the Realtek RTL8127
+ * 10GbE PCIe family, including the RTL8127ATF fiber (SFP+) variant.
+ *
+ * User-space counterpart of the RTL812xLucy kext in this repository.
+ * The hardware logic (chip detection, fiber SerDes bring-up, MCU tables)
+ * is ported from the same vendor r8127 Linux driver; see docs/DEXT-PORT.md
+ * for the porting map.
+ */
+
+#ifndef RTL8127Driver_h
+#define RTL8127Driver_h
+
+#include <Availability.h>
+#include <DriverKit/IOService.iig>
+#include <NetworkingDriverKit/IOUserNetworkEthernet.iig>
+
+class RTL8127Driver : public IOUserNetworkEthernet
+{
+public:
+    virtual bool init() override;
+    virtual void free() override;
+
+    virtual kern_return_t Start(IOService *provider) override;
+    virtual kern_return_t Stop(IOService *provider) override;
+
+    /*
+     * Abstract interface of IOUserNetworkEthernet. The non-deprecated
+     * replacements (setInterfaceEnable & co.) are LOCALONLY methods that we
+     * override in C++ directly; these RPC variants are still pure virtual
+     * and must exist.
+     */
+    virtual kern_return_t SetInterfaceEnable(bool isEnable) override;
+    virtual kern_return_t SetPromiscuousModeEnable(bool enable) override;
+    virtual kern_return_t SetMulticastAddresses(const IOUserNetworkMACAddress *addresses,
+                                                uint32_t count) override;
+    virtual kern_return_t SetAllMulticastModeEnable(bool enable) override;
+    virtual kern_return_t SelectMediaType(IOUserNetworkMediaType mediaType) override;
+    virtual kern_return_t SetWakeOnMagicPacketEnable(bool enable) override;
+    virtual kern_return_t SetMTU(uint32_t mtu) override LOCAL;
+    virtual kern_return_t GetMaxTransferUnit(uint32_t *mtu) override LOCAL;
+    virtual kern_return_t SetHardwareAssists(uint32_t hardwareAssists) override LOCAL;
+    virtual kern_return_t GetHardwareAssists(uint32_t *hardwareAssists) override LOCAL;
+};
+
+#endif /* RTL8127Driver_h */
