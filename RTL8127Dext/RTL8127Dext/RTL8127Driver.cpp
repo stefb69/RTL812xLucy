@@ -681,21 +681,23 @@ kern_return_t IMPL(RTL8127Driver, Start)
     }
 
     /*
-     * Locate the MMIO BAR by probing for the RTL8127 TxConfig signature,
-     * then map it into this process: the ported hardware layer accesses
-     * registers through tp->mmio_addr.
+     * Locate the MMIO BAR, then map it into this process: the ported
+     * hardware layer accesses registers through tp->mmio_addr. We don't
+     * pin a specific chip signature here (this dext is generic across the
+     * RTL812x family) -- any BAR that reads back a plausible TxConfig is
+     * accepted, and rtl812xIdentifyChip() decides the exact chip below.
      */
     ivars->barIndex = 0xFF;
     for (bar = 0; bar < 6; bar++) {
         txConfig = 0;
         ivars->pciDevice->MemoryRead32((uint8_t)bar, 0x40 /* TxConfig */, &txConfig);
-        if ((txConfig & 0x7C800000) == 0x6C800000) {
+        if (txConfig != 0 && txConfig != 0xFFFFFFFF) {
             ivars->barIndex = (uint8_t)bar;
             break;
         }
     }
     if (ivars->barIndex == 0xFF) {
-        Log("no BAR with an RTL8127 TxConfig signature found");
+        Log("no MMIO BAR with a readable TxConfig found");
         goto fail;
     }
 
@@ -720,9 +722,17 @@ kern_return_t IMPL(RTL8127Driver, Start)
         goto fail;
     }
 
-    fiberReg = rtl8125_mac_ocp_read(tp, 0xD006);
-    ivars->fiberMode = ((fiberReg & 0xFF) == 0x07);
-    Log("chip mcfg %u, MAC-OCP 0xD006=0x%04x -> %s", tp->mcfg, fiberReg,
+    /* Fiber (SFP+) only exists on the RTL8127ATF; the 0xD006 == 0x07 probe
+     * is meaningful only for CFG_METHOD_41/42. Other chips are copper. */
+    if (tp->mcfg == CFG_METHOD_41 || tp->mcfg == CFG_METHOD_42) {
+        fiberReg = rtl8125_mac_ocp_read(tp, 0xD006);
+        ivars->fiberMode = ((fiberReg & 0xFF) == 0x07);
+    } else {
+        fiberReg = 0;
+        ivars->fiberMode = false;
+    }
+    Log("chip mcfg %u, maxSpeed %u, MAC-OCP 0xD006=0x%04x -> %s", tp->mcfg,
+        (unsigned int)tp->HwSuppMaxPhyLinkSpeed, fiberReg,
         ivars->fiberMode ? "RTL8127ATF fiber mode" : "copper/NIC mode");
     Log("MAC address %02x:%02x:%02x:%02x:%02x:%02x",
         hw->currMacAddr.bytes[0], hw->currMacAddr.bytes[1], hw->currMacAddr.bytes[2],
@@ -836,17 +846,28 @@ kern_return_t IMPL(RTL8127Driver, Start)
         }
     }
 
-    /* Media list: fiber 10G/1G forced plus auto. */
+    /*
+     * Media list: derived from the chip's max PHY speed so 2.5G (8125) and
+     * 5G (8126) parts don't advertise rates they can't reach. Fiber
+     * (8127ATF) exposes the forced 10G/1G SerDes modes.
+     */
     ivars->mediaCount = 0;
     ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernetAuto;
     if (ivars->fiberMode) {
         ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseSR;
         ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet1000BaseSX;
     } else {
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseT;
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet5000BaseT;
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet2500BaseT;
+        UInt32 maxSpeed = tp->HwSuppMaxPhyLinkSpeed;
+
+        if (maxSpeed >= SPEED_10000)
+            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseT;
+        if (maxSpeed >= SPEED_5000)
+            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet5000BaseT;
+        if (maxSpeed >= SPEED_2500)
+            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet2500BaseT;
         ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet1000BaseT;
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet100BaseTX;
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10BaseT;
     }
     ivars->currentMedia = kIOUserNetworkMediaEthernetAuto;
 

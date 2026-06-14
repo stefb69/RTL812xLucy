@@ -19,10 +19,10 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>OSBundleUsageDescription</key>
-	<string>Driver for Realtek RTL8127 10GbE PCIe Ethernet controllers (including the RTL8127ATF SFP+ fiber variant).</string>
+	<string>Driver for Realtek RTL812x Ethernet controllers: RTL8125 (2.5GbE), RTL8126 (5GbE) and RTL8127 (10GbE, including the RTL8127ATF SFP+ fiber variant).</string>
 	<key>IOKitPersonalities</key>
 	<dict>
-		<key>RTL8127</key>
+		<key>RTL812x</key>
 		<dict>
 			<key>CFBundleIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
@@ -35,7 +35,7 @@
 			<key>IOUserServerName</key>
 			<string>net.wizzz.RTL8127Dext</string>
 			<key>IOPCIPrimaryMatch</key>
-			<string>0x812710ec 0x0e1010ec</string>
+			<string>0x812510ec 0x81251186 0x300010ec 0x812610ec 0x500010ec 0x812710ec 0x0e1010ec</string>
 			<key>IOPCITunnelCompatible</key>
 			<true/>
 			<key>IOProbeScore</key>
