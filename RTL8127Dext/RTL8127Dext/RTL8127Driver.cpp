@@ -152,6 +152,12 @@ struct RTL8127Driver_IVars {
     uint32_t mediaCount;
     uint32_t currentMedia;
     uint32_t mtu;
+
+    /* One-shot warnings: a full hand-off FIFO means the framework thread
+     * fell behind and we had to drop a packet/completion. Logged once per
+     * direction to avoid spamming the datapath. */
+    bool txDropWarned;
+    bool rxDropWarned;
 };
 
 bool RTL8127Driver::init()
@@ -400,7 +406,6 @@ static uint32_t rxEnqueueAction(OSObject *target,
 
 static bool rxRingRefill(RTL8127Driver_IVars *iv)
 {
-    RTL8127Hw *hw = iv->hw;
     bool complete = true;
 
     for (uint32_t i = 0; i < kNumRxDesc; i++) {
@@ -451,8 +456,13 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
         iv->txPkt[index] = nullptr;
         if (pkt) {
             pkt->setCompletionStatus(abort ? kIOReturnAborted : kIOReturnSuccess);
-            if (!fifoPush(&iv->txDoneFifo, pkt))
+            if (!fifoPush(&iv->txDoneFifo, pkt)) {
+                if (!iv->txDropWarned) {
+                    iv->txDropWarned = true;
+                    Log("tx completion FIFO full - dropping completions (framework thread behind)");
+                }
                 iv->pool->deallocatePacket(pkt);
+            }
             didWork = true;
         }
         OSAddAtomic(1, &hw->txNumFreeDesc);
@@ -514,8 +524,13 @@ static void rxRingService(RTL8127Driver *driver)
             if (csum)
                 pkt->setRxChecksumInfo(csum, 0xffff);
 
-            if (!fifoPush(&iv->rxDoneFifo, pkt))
+            if (!fifoPush(&iv->rxDoneFifo, pkt)) {
+                if (!iv->rxDropWarned) {
+                    iv->rxDropWarned = true;
+                    Log("rx FIFO full - dropping packets (framework thread behind)");
+                }
                 iv->pool->deallocatePacket(pkt);
+            }
             delivered = true;
         }
         hw->rxNextDescIndex = (index + 1) & kRxDescMask;
