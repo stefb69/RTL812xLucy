@@ -905,6 +905,32 @@ kern_return_t IMPL(RTL8127Driver, Stop)
         OSSafeReleaseNULL(iv->barMd);
         OSSafeReleaseNULL(iv->workQueue);
 
+        /*
+         * Return any packets the rings still hold, then release the NDK
+         * queues and the pool (each created +1 in Start). The queues
+         * reference the pool, so drop them first. Releasing the pool
+         * reclaims every packet buffer it backs.
+         */
+        if (iv->pool) {
+            for (uint32_t i = 0; i < kNumRxDesc; i++) {
+                if (iv->rxPkt[i]) {
+                    iv->pool->deallocatePacket(iv->rxPkt[i]);
+                    iv->rxPkt[i] = nullptr;
+                }
+            }
+            for (uint32_t i = 0; i < kNumTxDesc; i++) {
+                if (iv->txPkt[i]) {
+                    iv->pool->deallocatePacket(iv->txPkt[i]);
+                    iv->txPkt[i] = nullptr;
+                }
+            }
+        }
+        OSSafeReleaseNULL(iv->txSubQueue);
+        OSSafeReleaseNULL(iv->txCompQueue);
+        OSSafeReleaseNULL(iv->rxSubQueue);
+        OSSafeReleaseNULL(iv->rxCompQueue);
+        OSSafeReleaseNULL(iv->pool);
+
         if (iv->opened && iv->pciDevice) {
             iv->pciDevice->Close(this, 0);
             iv->opened = false;
