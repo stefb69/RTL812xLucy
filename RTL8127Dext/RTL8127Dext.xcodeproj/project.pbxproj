@@ -239,6 +239,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = RTL8127Dext/RTL8127Dext.entitlements;
 				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = LRA39582TA;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/RTL8127Dext/compat",
@@ -264,6 +265,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = RTL8127Dext/RTL8127Dext.entitlements;
 				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = LRA39582TA;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/RTL8127Dext/compat",
@@ -288,6 +290,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = LRA39582TA;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -306,6 +309,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = LRA39582TA;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
