@@ -13,6 +13,12 @@ an RTL8127ATF in a Thunderbolt enclosure, SFP+ DAC to a 10G switch: DHCP,
 Builds universal (x86_64 + arm64e). Note that macOS has no SFP+/DAC medium
 type, so the link is reported as "10GBase-T" — cosmetic only.
 
+Performance (kext): iperf3 over the 10G link to a Linux peer on the same
+switch reaches **~9.35 Gbit/s TX and ~9.19 Gbit/s RX** with a single TCP
+stream — i.e. 10GbE line rate in both directions, with negligible
+retransmissions. (Measured with the kext; the DriverKit dext in `RTL8127Dext/`
+is not yet hardware-validated.)
+
 Build: `xcodebuild -project RTL812xLucy.xcodeproj -target RTL812xLucy
 -configuration Release build CODE_SIGNING_ALLOWED=NO`
 
