@@ -1,4 +1,4 @@
-name: Build kext
+name: Build kext + dext
 
 permissions:
   contents: write
@@ -20,8 +20,10 @@ jobs:
         run: |
           xcodebuild -version
           xcrun --show-sdk-path
+          xcrun --sdk driverkit --show-sdk-path
 
-      - name: Build (Release, universal x86_64 + arm64e)
+      # ---- kext (RTL812xLucy) ----
+      - name: Build kext (Release, universal x86_64 + arm64e)
         run: |
           set -o pipefail
           xcodebuild -project RTL812xLucy.xcodeproj \
@@ -31,41 +33,79 @@ jobs:
                      CODE_SIGNING_ALLOWED=NO \
                      RUN_CLANG_STATIC_ANALYZER=NO | tail -40
 
-      - name: Verify architectures
+      - name: Verify kext architectures
         run: |
-          lipo -archs build/Release/RTL812xLucy.kext/Contents/MacOS/RTL812xLucy
-          lipo -archs build/Release/RTL812xLucy.kext/Contents/MacOS/RTL812xLucy | grep -q arm64e
+          BIN=build/Release/RTL812xLucy.kext/Contents/MacOS/RTL812xLucy
+          lipo -archs "$BIN"
+          lipo -archs "$BIN" | grep -q arm64e
+          lipo -archs "$BIN" | grep -q x86_64
 
-      - name: Build dext skeleton (RTL8127Dext)
+      # ---- dext + host app (RTL8127Dext / RTL8127App) ----
+      # Building the app target also builds the dext (a target dependency)
+      # and embeds it under Contents/Library/SystemExtensions.
+      - name: Build dext + host app (Release, universal x86_64 + arm64)
         run: |
           set -o pipefail
           xcodebuild -project RTL8127Dext/RTL8127Dext.xcodeproj \
-                     -target RTL8127Dext \
+                     -target RTL8127App \
                      -configuration Release \
                      build \
-                     CODE_SIGNING_ALLOWED=NO | tail -15
+                     CODE_SIGNING_ALLOWED=NO \
+                     RUN_CLANG_STATIC_ANALYZER=NO | tail -40
 
+      - name: Verify dext architectures
+        run: |
+          BIN=RTL8127Dext/build/Release-driverkit/RTL8127Dext.dext/RTL8127Dext
+          lipo -archs "$BIN"
+          lipo -archs "$BIN" | grep -q arm64
+          lipo -archs "$BIN" | grep -q x86_64
+
+      # ---- package ----
       - name: Package
         run: |
-          cd build/Release
-          zip -ry RTL812xLucy-${{ github.ref_name }}-${{ github.sha }}.kext.zip RTL812xLucy.kext RTL812xLucy.kext.dSYM
+          mkdir -p dist
+          STAMP="${{ github.ref_name }}-${{ github.sha }}"
+          ( cd build/Release && \
+            zip -ry "$GITHUB_WORKSPACE/dist/RTL812xLucy-$STAMP.kext.zip" \
+                RTL812xLucy.kext RTL812xLucy.kext.dSYM )
+          ( cd RTL8127Dext/build/Release && \
+            zip -ry "$GITHUB_WORKSPACE/dist/RTL8127App-$STAMP.app.zip" \
+                RTL8127App.app )
+          ( cd RTL8127Dext/build/Release-driverkit && \
+            zip -ry "$GITHUB_WORKSPACE/dist/RTL8127Dext-$STAMP.dext.zip" \
+                RTL8127Dext.dext RTL8127Dext.dext.dSYM )
+          ls -lh dist
 
-      - name: Upload artifact
+      - name: Upload kext artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RTL812xLucy.kext
-          path: build/Release/*.kext.zip
+          name: RTL812xLucy-kext
+          path: dist/*.kext.zip
+
+      - name: Upload dext artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RTL8127Dext
+          path: |
+            dist/*.app.zip
+            dist/*.dext.zip
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/Release/*.kext.zip
+          files: dist/*.zip
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           body: |
-            Unsigned development build of the RTL812xLucy kext with RTL8127/RTL8127ATF support.
+            Unsigned development build for the Realtek RTL812x family
+            (RTL8125 2.5G, RTL8126 5G, RTL8127 / RTL8127ATF 10G).
 
-            Loading on Apple Silicon requires Reduced Security with user kext
-            management enabled, plus `csrutil disable` while the kext is unsigned.
-            See the README for instructions.
+            - `*.kext.zip` — RTL812xLucy kext (universal x86_64 + arm64e).
+              Loading on Apple Silicon needs Reduced Security + user kext
+              management, plus `csrutil disable` while unsigned. See the README.
+            - `*.app.zip` — host app embedding the RTL8127Dext DriverKit
+              extension. The dext is unsigned here, so it loads only with the
+              granted DriverKit entitlements, or for development with
+              `systemextensionsctl developer on` + `amfi_get_out_of_my_way=1`.
+            - `*.dext.zip` — the standalone DriverKit extension + dSYM.
