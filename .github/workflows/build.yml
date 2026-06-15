@@ -74,6 +74,14 @@ jobs:
           ( cd RTL8127Dext/build/Release-driverkit && \
             zip -ry "$GITHUB_WORKSPACE/dist/RTL8127Dext-$STAMP.dext.zip" \
                 RTL8127Dext.dext RTL8127Dext.dext.dSYM )
+          # installer package (unsigned; lights up signing when
+          # DEVELOPER_ID_INSTALLER is set, see packaging/build-pkg.sh)
+          PKG_VERSION="${{ github.ref_name }}"
+          case "$PKG_VERSION" in v*) PKG_VERSION="${PKG_VERSION#v}" ;; *) PKG_VERSION="0.1.0" ;; esac
+          packaging/build-pkg.sh \
+              RTL8127Dext/build/Release/RTL8127App.app \
+              "$PKG_VERSION" \
+              "dist/RTL8127-$STAMP.pkg"
           ls -lh dist
 
       - name: Upload kext artifact
@@ -90,11 +98,19 @@ jobs:
             dist/*.app.zip
             dist/*.dext.zip
 
+      - name: Upload installer package
+        uses: actions/upload-artifact@v4
+        with:
+          name: RTL8127-installer
+          path: dist/*.pkg
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/*.pkg
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           body: |
@@ -109,3 +125,6 @@ jobs:
               granted DriverKit entitlements, or for development with
               `systemextensionsctl developer on` + `amfi_get_out_of_my_way=1`.
             - `*.dext.zip` — the standalone DriverKit extension + dSYM.
+            - `*.pkg` — installer that drops the host app into /Applications.
+              Unsigned: install needs Gatekeeper approval and the dext still
+              requires the granted entitlements (or developer mode) to load.
