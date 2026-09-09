@@ -111,6 +111,7 @@
 			buildPhases = (
 				AA10000000000000000000B3 /* Sources */,
 				AA10000000000000000000B4 /* Frameworks */,
+				AA10000000000000000000B7 /* Resources */,
 				AA10000000000000000000B5 /* Embed System Extensions */,
 			);
 			buildRules = (
@@ -130,6 +131,16 @@
 		};
 /* End PBXNativeTarget section */
 
+/* Begin PBXResourcesBuildPhase section */
+		AA10000000000000000000B7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXProject section */
 		AA1000000000000000000090 /* Project object */ = {
 			isa = PBXProject;
@@ -142,6 +153,12 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				fr,
+				de,
+				es,
+				it,
+				ja,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = AA10000000000000000000A0;

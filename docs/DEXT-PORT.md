@@ -58,14 +58,22 @@ porté et validé.
   les bits opts2), `getHardwareAssists`. MTU 1500 (jumbo: plus tard), pas de
   WoL.
 - **App hôte (fait)** : `RTL8127App` (SwiftUI, cible du même xcodeproj),
-  embarque le dext dans `Contents/Library/SystemExtensions` et soumet
-  l'`OSSystemExtensionRequest` d'activation/désactivation.
+  embarque le dext dans `Contents/Library/SystemExtensions`. Au lancement
+  elle interroge l'état (`propertiesRequest`), active le dext si besoin,
+  ouvre le panneau Extensions de pilote de Réglages Système quand macOS
+  demande l'approbation, puis affiche en continu (scan IORegistry toutes
+  les 2 s) la carte détectée, le pilote attaché, le lien (vitesse, BSD
+  name, IPv4). Localisée en/fr/de/es/it/ja/zh-Hans via
+  `RTL8127App/Localizable.xcstrings`. Le bundle du dext doit s'appeler
+  `net.wizzz.RTL8127Dext.dext` (PRODUCT_NAME = bundle ID), sinon sysextd
+  ne le trouve pas dans l'app.
 
-**État : tout compile et link (dext universel arm64+x86_64 + app).
-Non testé sur matériel. Entitlements DriverKit accordés par Apple en
-septembre 2026 : la signature Developer ID est câblée dans le projet (voir
-ci-dessous), reste le premier chargement sur matériel. Le kext reste la
-référence fonctionnelle validée.**
+**État (9 sept. 2026) : build Developer ID signé et notarisé
+(`packaging/sign-and-notarize.sh`). Parcours d'installation validé sur un
+Mac en Sécurité maximale, SIP activé, sans kext : app → activation →
+approbation → `systemextensionsctl list` = `activated enabled`, dext chargé
+par kernelmanagerd. Pas encore testé avec une carte branchée (matching
+PCI, lien, débit). Le kext reste la référence fonctionnelle validée.**
 
 ## Signature Developer ID et notarisation
 

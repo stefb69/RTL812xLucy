@@ -48,15 +48,32 @@ Two drivers live in this repository:
 - **`RTL812xLucy.kext`**: the kernel extension. This is the validated driver
   with the numbers above. On Apple Silicon it requires Reduced Security while
   unsigned (see below).
-- **`RTL8127Dext/`**: a DriverKit system extension plus a small host app. The
-  goal is a driver that installs like any other on a Mac with full security
-  enabled. The code is complete and builds; Apple granted the DriverKit PCI
-  and networking entitlements in September 2026, so the next step is a
-  Developer ID signed, notarized build and hardware validation. Details in
+- **`RTL8127Dext/`**: a DriverKit system extension (dext) plus the host app
+  that installs it. Signed with Developer ID and notarized, so it installs
+  on a Mac with **full security enabled**: open the app, approve the driver
+  once in System Settings, done. The app then shows whether a card is
+  detected, whether the driver is attached and the link state, in English,
+  French, German, Spanish, Italian, Japanese and Simplified Chinese. The
+  install flow is validated; the datapath has not yet been exercised on a
+  card with the dext (the kext has). Details in
   [docs/DEXT-PORT.md](docs/DEXT-PORT.md).
 
-## Install (kext, Apple Silicon)
+## Install (dext, recommended)
 
+Download `RTL8127App-*.zip` from
+[Releases](https://github.com/stefb69/RTL812xLucy/releases), unzip it, move
+**RTL8127App** to Applications and open it. The app installs the driver by
+itself; macOS asks you to allow it once and the app opens the right System
+Settings pane for that (General, Login Items & Extensions, Driver
+Extensions: turn on RTL8127App). No recoveryOS, no security changes. Plug
+in the card and the app shows the link state; configure the interface in
+System Settings, Network like any Ethernet port.
+
+To remove it, open the app and click "Remove driver".
+
+## Install (kext, advanced)
+
+The kext is the driver that has been validated at line rate on hardware.
 Download the latest `RTL812xLucy-*.kext.zip` from
 [Releases](https://github.com/stefb69/RTL812xLucy/releases), or build it
 (see below). The kext is unsigned, so macOS must be allowed to load it:
@@ -119,7 +136,7 @@ built from reports.
 ## Known limitations
 
 - The kext is unsigned: Reduced Security and `csrutil disable` are required
-  on Apple Silicon. A signed DriverKit dext is the planned fix.
+  on Apple Silicon. Use the signed dext unless you need the kext.
 - The link medium is reported as 10GBase-T even over SFP+ DAC or fiber.
   macOS has no medium constant for those; it is a display issue only.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
@@ -132,7 +149,8 @@ built from reports.
   ported but no one has run it yet.
 - Reports from other Thunderbolt enclosures and from Mac Pro PCIe slots.
 - Testing on macOS 26.6 and later.
-- Dext testers, once the first signed build is out.
+- Dext reports: the signed dext installs cleanly, but nobody has pushed
+  10G traffic through it yet. If you have a card, please try it and report.
 
 ## Diagnostics
 
