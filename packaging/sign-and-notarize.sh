@@ -39,10 +39,26 @@ BUILD="$HERE/RTL8127Dext/build"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
+# notarize FILE: submit, wait, fail (with Apple's log) unless Accepted.
+notarize() {
+    local file="$1" json id status
+    json="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" \
+                --wait --output-format json)"
+    id="$(printf '%s' "$json" | plutil -extract id raw -o - - 2>/dev/null || true)"
+    status="$(printf '%s' "$json" | plutil -extract status raw -o - - 2>/dev/null || true)"
+    echo "notarization $id: $status"
+    if [ "$status" != "Accepted" ]; then
+        [ -n "$id" ] && xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" || true
+        echo "error: notarization of $file failed ($status)" >&2
+        exit 1
+    fi
+}
+
 echo "== Building signed Release (app + embedded dext)"
 xcodebuild -project "$PROJ" -target RTL8127App -configuration Release \
     build \
     MARKETING_VERSION="$VERSION" \
+    OTHER_CODE_SIGN_FLAGS="--timestamp" \
     RUN_CLANG_STATIC_ANALYZER=NO | tail -20
 
 APP="$BUILD/Release/RTL8127App.app"
@@ -50,18 +66,18 @@ DEXT="$APP/Contents/Library/SystemExtensions/RTL8127Dext.dext"
 
 echo "== Verifying signatures"
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -d --entitlements - "$DEXT" | grep -q 'com.apple.developer.driverkit' \
+codesign -d --entitlements - "$DEXT" | grep 'com.apple.developer.driverkit' >/dev/null \
     || { echo "error: dext has no DriverKit entitlements (profile missing?)" >&2; exit 1; }
-codesign -d --entitlements - "$APP" | grep -q 'system-extension.install' \
+codesign -d --entitlements - "$APP" | grep 'system-extension.install' >/dev/null \
     || { echo "error: app has no system-extension.install entitlement" >&2; exit 1; }
-codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application' \
+codesign -dvv "$APP" 2>&1 | grep 'Authority=Developer ID Application' >/dev/null \
     || { echo "error: app is not signed with Developer ID" >&2; exit 1; }
 
 ZIP="$OUT/RTL8127App-$VERSION.zip"
 echo "== Notarizing app: $ZIP"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
-xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+notarize "$ZIP"
 xcrun stapler staple "$APP"
 # Re-zip with the staple ticket inside.
 rm -f "$ZIP"
@@ -73,7 +89,7 @@ if [ -n "${DEVELOPER_ID_INSTALLER:-}" ]; then
     PKG="$OUT/RTL8127-$VERSION.pkg"
     echo "== Building signed installer: $PKG"
     "$HERE/packaging/build-pkg.sh" "$APP" "$VERSION" "$PKG"
-    xcrun notarytool submit "$PKG" --keychain-profile "$NOTARY_PROFILE" --wait
+    notarize "$PKG"
     xcrun stapler staple "$PKG"
     spctl --assess --type install --verbose=2 "$PKG"
     echo "Built: $PKG"
