@@ -38,15 +38,30 @@ mkdir -p "$(dirname "$OUT")"
 # Stage the app under a clean root that maps to /Applications.
 ROOT="$(mktemp -d)"
 COMPONENT="$(mktemp -d)/RTL8127App-component.pkg"
-trap 'rm -rf "$ROOT" "$(dirname "$COMPONENT")"' EXIT
+trap 'rm -rf "$ROOT" "$(dirname "$COMPONENT")" "$SCRIPTS"' EXIT
+SCRIPTS=""
 
 cp -R "$APP" "$ROOT/"
+
+# postinstall: open the app for the logged-in user so the driver activation
+# (and the one-time approval prompt) happens right after the install.
+SCRIPTS="$(mktemp -d)"
+cat > "$SCRIPTS/postinstall" <<'POST'
+#!/bin/bash
+user="$(stat -f %Su /dev/console 2>/dev/null)"
+if [ -n "$user" ] && [ "$user" != "root" ]; then
+    sudo -u "$user" open "/Applications/RTL8127App.app" || true
+fi
+exit 0
+POST
+chmod +x "$SCRIPTS/postinstall"
 
 # Component package: the app, installed to /Applications.
 pkgbuild --root "$ROOT" \
          --install-location /Applications \
          --identifier "$PKG_IDENTIFIER" \
          --version "$VERSION" \
+         --scripts "$SCRIPTS" \
          "$COMPONENT"
 
 # Product archive (double-clickable installer), optionally signed.

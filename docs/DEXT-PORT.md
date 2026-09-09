@@ -117,8 +117,13 @@ Ensuite `packaging/sign-and-notarize.sh <version>` construit, vérifie les
 signatures et entitlements, notarise (`notarytool`, profil de credentials
 `rtl8127-notary` à créer une fois avec `xcrun notarytool store-credentials`),
 agrafe le ticket et produit `dist/RTL8127App-<version>.zip`. Avec
-`DEVELOPER_ID_INSTALLER` défini, il produit aussi un `.pkg` signé et
-notarisé (nécessite un certificat Developer ID Installer).
+`DEVELOPER_ID_INSTALLER="Developer ID Installer: Wizzz.net (LRA39582TA)"`
+il produit aussi `dist/RTL8127-<version>.pkg`, signé et notarisé, avec un
+postinstall qui ouvre l'app pour l'utilisateur connecté. Le pkg est le
+livrable recommandé : macOS n'active un dext que depuis une app dans
+`/Applications`, le pkg l'y met lui-même (l'app le vérifie aussi et propose
+de s'y déplacer). Après un tag, uploader le pkg et le zip notarisés à la
+main sur la release, la CI ne signe pas.
 
 Sans les profils installés, construire avec `CODE_SIGNING_ALLOWED=NO`
 (c'est ce que fait la CI).

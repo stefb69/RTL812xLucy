@@ -1,14 +1,14 @@
 # Release notes draft: next tag
 
-Tag proposal: `v1.1.2-rtl8127.beta2` (or `v1.2.0-rtl8127` if the dext ships
-signed). Tag only after the validation pass. The CI workflow builds the kext,
+Tag proposal: `v1.1.2-rtl8127.beta3` or `v1.2.0-rtl8127` once the dext has
+moved 10G traffic on a card. beta2 (10 Sept 2026) shipped the notarized pkg/zip. The CI workflow builds the kext,
 dext, host app and installer .pkg and attaches them to the release; paste
 this text as the release body (it replaces the generic body in build.yml for
 this release).
 
 ---
 
-RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, second beta.
+RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs.
 
 **What works**
 
@@ -17,7 +17,7 @@ RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, second beta.
   ~9.35 Gbit/s TX / ~9.19 Gbit/s RX.
 - RTL8125 / RTL8126 unchanged from upstream RTL812xLucy 1.1.2.
 
-**Changes since beta1**
+**Changes since beta2**
 
 - <kext fixes for macOS 26.6, if any>
 - <dext status: first hardware-validated build / signed build / unchanged>

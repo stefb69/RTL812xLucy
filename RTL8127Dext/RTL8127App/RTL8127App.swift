@@ -17,6 +17,7 @@ import AppKit
 // MARK: - Extension state
 
 enum DriverState: Equatable {
+    case wrongLocation
     case checking
     case installing
     case waitingForApproval
@@ -150,8 +151,35 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     private var timer: Timer?
     private var openedSettings = false
 
+    /// macOS only activates a system extension from an app located in
+    /// /Applications. Catch that before sysextd does, with a clearer message.
+    var isInApplications: Bool {
+        Bundle.main.bundleURL.standardizedFileURL.path.hasPrefix("/Applications/")
+    }
+
+    /// Copy the app into /Applications, relaunch it from there and quit.
+    func moveToApplications() {
+        let src = Bundle.main.bundleURL
+        let dst = URL(fileURLWithPath: "/Applications").appendingPathComponent(src.lastPathComponent)
+        do {
+            if FileManager.default.fileExists(atPath: dst.path) {
+                try FileManager.default.removeItem(at: dst)
+            }
+            try FileManager.default.copyItem(at: src, to: dst)
+        } catch {
+            state = .failed(error.localizedDescription)
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: dst, configuration: config) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+
     func start() {
         refreshHardware()
+        guard isInApplications else { state = .wrongLocation; return }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.refreshHardware()
         }
@@ -300,6 +328,13 @@ struct ContentView: View {
     // Step 1: the extension itself.
     @ViewBuilder private var driverRow: some View {
         switch manager.state {
+        case .wrongLocation:
+            StatusRow(icon: "folder.badge.questionmark", color: .orange, title: "Move this app to Applications") {
+                Text("macOS only installs drivers from apps located in the Applications folder.")
+                Button("Move to Applications") { manager.moveToApplications() }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+            }
         case .checking:
             StatusRow(icon: "circle.dotted", color: .secondary, title: "Driver") {
                 Text("Checking…").foregroundStyle(.secondary)
