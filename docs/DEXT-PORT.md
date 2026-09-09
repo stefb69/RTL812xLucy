@@ -74,23 +74,36 @@ Le projet est en signature manuelle, team `LRA39582TA`, identité
 
 | Cible | Bundle ID | Profil (`PROVISIONING_PROFILE_SPECIFIER`) | Entitlements |
 |---|---|---|---|
-| RTL8127Dext | `net.wizzz.RTL8127Dext` | `RTL8127Dext Developer ID` | driverkit, driverkit.family.networking, driverkit.transport.pci |
+| RTL8127Dext | `net.wizzz.RTL8127Dext` | `RTL8127Dext Developer ID` | driverkit, driverkit.family.networking, driverkit.transport.pci (`IOPCIPrimaryMatch` = `0x000010ec&0x0000FFFF`) |
 | RTL8127App | `net.wizzz.RTL8127App` | `RTL8127App Developer ID` | system-extension.install (+ hardened runtime) |
 
 Création des profils sur developer.apple.com (Certificates, Identifiers &
 Profiles) :
 
-1. Identifiers → App IDs → `net.wizzz.RTL8127Dext` : cocher **DriverKit**,
-   **DriverKit Family Networking**, **DriverKit Transport PCI**. (Créer
-   l'App ID s'il n'existe pas, type App, bundle ID explicite.)
+1. Identifiers → App IDs → `net.wizzz.RTL8127Dext` (type App, bundle ID
+   explicite) : cocher **DriverKit**, **DriverKit Family Networking**,
+   **DriverKit PCI (PrimaryMatch)**, et leurs variantes « (development) »
+   pour pouvoir aussi créer un profil Development plus tard. Le portail
+   génère le match PCI sous forme de masque vendeur
+   (`0x000010ec&0x0000FFFF`, tout Realtek) : `RTL8127Dext.entitlements`
+   doit porter exactement cette valeur, sinon la signature n'est pas
+   acceptée au chargement. Le filtrage par device reste dans l'Info.plist
+   (`IOPCIPrimaryMatch` explicite).
 2. Identifiers → `net.wizzz.RTL8127App` : cocher **System Extension**.
 3. Profiles → + → Distribution → **Developer ID** → App ID
    `net.wizzz.RTL8127Dext` → certificat Developer ID Application → nom
    exactement `RTL8127Dext Developer ID`. Apple propose la liste des
    entitlements DriverKit à inclure : sélectionner les trois.
 4. Même chose pour `net.wizzz.RTL8127App`, nom `RTL8127App Developer ID`.
-5. Télécharger les deux `.provisionprofile` et les ouvrir (double-clic) sur
-   le Mac de build.
+5. Télécharger les deux `.provisionprofile` et les installer. Le
+   double-clic ne suffit pas toujours : au besoin les copier dans
+   `~/Library/Developer/Xcode/UserData/Provisioning Profiles/` sous le nom
+   `<UUID>.provisionprofile` (UUID lu avec
+   `security cms -D -i <fichier> | plutil -extract UUID raw -o - -`).
+
+L'app est construite avec `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO` en
+Release pour ne pas embarquer `get-task-allow`, que la notarisation refuse
+sur un build fait avec `xcodebuild build` (sans archive).
 
 Ensuite `packaging/sign-and-notarize.sh <version>` construit, vérifie les
 signatures et entitlements, notarise (`notarytool`, profil de credentials
