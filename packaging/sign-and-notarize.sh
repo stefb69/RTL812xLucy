@@ -62,7 +62,7 @@ xcodebuild -project "$PROJ" -target RTL8127App -configuration Release \
     RUN_CLANG_STATIC_ANALYZER=NO | tail -20
 
 APP="$BUILD/Release/RTL8127App.app"
-DEXT="$APP/Contents/Library/SystemExtensions/RTL8127Dext.dext"
+DEXT="$APP/Contents/Library/SystemExtensions/net.wizzz.RTL8127Dext.dext"
 
 echo "== Verifying signatures"
 codesign --verify --deep --strict --verbose=2 "$APP"

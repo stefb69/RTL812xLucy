@@ -258,7 +258,7 @@
 					NetworkingDriverKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = net.wizzz.RTL8127Dext;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = net.wizzz.RTL8127Dext;
 			};
 			name = Debug;
 		};
@@ -286,7 +286,7 @@
 					NetworkingDriverKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = net.wizzz.RTL8127Dext;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = net.wizzz.RTL8127Dext;
 			};
 			name = Release;
 		};

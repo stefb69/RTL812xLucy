@@ -55,7 +55,7 @@ jobs:
 
       - name: Verify dext architectures
         run: |
-          BIN=RTL8127Dext/build/Release-driverkit/RTL8127Dext.dext/RTL8127Dext
+          BIN=RTL8127Dext/build/Release-driverkit/net.wizzz.RTL8127Dext.dext/net.wizzz.RTL8127Dext
           lipo -archs "$BIN"
           lipo -archs "$BIN" | grep -q arm64
           lipo -archs "$BIN" | grep -q x86_64
@@ -73,7 +73,7 @@ jobs:
                 RTL8127App.app )
           ( cd RTL8127Dext/build/Release-driverkit && \
             zip -ry "$GITHUB_WORKSPACE/dist/RTL8127Dext-$STAMP.dext.zip" \
-                RTL8127Dext.dext RTL8127Dext.dext.dSYM )
+                net.wizzz.RTL8127Dext.dext net.wizzz.RTL8127Dext.dext.dSYM )
           # installer package (unsigned; lights up signing when
           # DEVELOPER_ID_INSTALLER is set, see packaging/build-pkg.sh)
           PKG_VERSION="${{ github.ref_name }}"
