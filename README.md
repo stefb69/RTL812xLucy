@@ -69,10 +69,6 @@ Driver Extensions: turn on RTL8127App). No recoveryOS, no security
 changes. Plug in the card and the app shows the link state; configure the
 interface in System Settings, Network like any Ethernet port.
 
-The same app is also available as a zip: unzip, move it to Applications
-(macOS only installs drivers from there, and the app will offer to move
-itself), open it.
-
 To remove the driver, open the app and click "Remove driver". Then delete
 the app.
 
