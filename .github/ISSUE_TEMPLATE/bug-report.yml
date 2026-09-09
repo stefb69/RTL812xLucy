@@ -1,0 +1,23 @@
+name: Bug report
+description: Something that used to work, or a crash / data problem with a supported setup.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Setup
+      placeholder: "Mac, macOS version, card, enclosure, driver (kext/dext) and version"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`sudo dmesg | grep -i rtl`, panic report, `/usr/bin/log show` output for the dext."
+      render: text

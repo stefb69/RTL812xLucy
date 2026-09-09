@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: RTL8125 / RTL8126 (2.5G / 5G) support
+    url: https://www.insanelymac.com/forum/topic/362326-rtl812xlucy-for-the-realtek-rtl812x-family/
+    about: Questions about the upstream RTL812xLucy driver on RTL8125/RTL8126 belong in Mieze's Insanelymac thread.

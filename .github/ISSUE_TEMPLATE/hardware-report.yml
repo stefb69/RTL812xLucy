@@ -1,0 +1,79 @@
+name: Hardware report
+description: Tell us whether the driver works on your Mac and card (working or not).
+title: "[HW] <Mac> + <card> + <enclosure>: works / does not work"
+labels: [hardware-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. Reports of working setups are as useful as failures: they feed the "Tested setups" table in the README.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Works (link up, traffic OK)
+        - Link up but no traffic / errors
+        - Driver loads, no link
+        - Driver does not load / kernel panic
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac
+      placeholder: "Mac mini M4 Pro, Mac Studio M3 Ultra, MacBook Pro M5..."
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.6.2 (25G83)"
+    validations:
+      required: true
+  - type: input
+    id: card
+    attributes:
+      label: Card
+      description: Brand/model and variant. `ioreg -p IOService -l | grep -A2 -i 'vendor-id' ` or System Information > PCI shows the vendor:device ID.
+      placeholder: "XikeStor RTL8127ATF SFP+ (10ec:0e10), generic RTL8127A RJ45 (10ec:8127)..."
+    validations:
+      required: true
+  - type: input
+    id: enclosure
+    attributes:
+      label: Enclosure / slot
+      placeholder: "Thunderbolt 4 PCIe enclosure (brand), Mac Pro slot 3, ..."
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link
+      placeholder: "SFP+ DAC 3 m to a MikroTik CRS309, 10GBASE-T Cat6a to a QNAP switch, 10G-SR fiber..."
+  - type: dropdown
+    id: driver
+    attributes:
+      label: Driver used
+      options:
+        - RTL812xLucy.kext
+        - RTL8127Dext (DriverKit)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Driver version / release tag or commit
+      placeholder: "v1.1.2-rtl8127.beta1"
+  - type: textarea
+    id: throughput
+    attributes:
+      label: Throughput (optional)
+      description: iperf3 numbers, both directions if possible, and what the peer was.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (for failures)
+      description: "`sudo dmesg | grep -i rtl` for the kext, `/usr/bin/log show --last 10m --predicate 'sender == \"RTL8127Dext\"'` for the dext, and the panic report from /Library/Logs/DiagnosticReports if any."
+      render: text
