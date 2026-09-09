@@ -50,9 +50,9 @@ Two drivers live in this repository:
   unsigned (see below).
 - **`RTL8127Dext/`**: a DriverKit system extension plus a small host app. The
   goal is a driver that installs like any other on a Mac with full security
-  enabled. The code is complete and builds, but it has not been loaded on
-  hardware yet: it needs the DriverKit PCI and networking entitlements from
-  Apple, which are requested and pending. Details in
+  enabled. The code is complete and builds; Apple granted the DriverKit PCI
+  and networking entitlements in September 2026, so the next step is a
+  Developer ID signed, notarized build and hardware validation. Details in
   [docs/DEXT-PORT.md](docs/DEXT-PORT.md).
 
 ## Install (kext, Apple Silicon)
@@ -132,7 +132,7 @@ built from reports.
   ported but no one has run it yet.
 - Reports from other Thunderbolt enclosures and from Mac Pro PCIe slots.
 - Testing on macOS 26.6 and later.
-- Once entitlements arrive: dext testers.
+- Dext testers, once the first signed build is out.
 
 ## Diagnostics
 

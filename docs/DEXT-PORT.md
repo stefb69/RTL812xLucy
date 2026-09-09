@@ -62,11 +62,47 @@ porté et validé.
   l'`OSSystemExtensionRequest` d'activation/désactivation.
 
 **État : tout compile et link (dext universel arm64+x86_64 + app).
-Non testé sur matériel — nécessite les entitlements DriverKit (demande en
-cours chez Apple) ou le mode développeur (voir ci-dessous). Le kext reste la
+Non testé sur matériel. Entitlements DriverKit accordés par Apple en
+septembre 2026 : la signature Developer ID est câblée dans le projet (voir
+ci-dessous), reste le premier chargement sur matériel. Le kext reste la
 référence fonctionnelle validée.**
 
-## Développement sans entitlement (en attendant Apple)
+## Signature Developer ID et notarisation
+
+Le projet est en signature manuelle, team `LRA39582TA`, identité
+`Developer ID Application`, avec deux profils de provisioning nommés :
+
+| Cible | Bundle ID | Profil (`PROVISIONING_PROFILE_SPECIFIER`) | Entitlements |
+|---|---|---|---|
+| RTL8127Dext | `net.wizzz.RTL8127Dext` | `RTL8127Dext Developer ID` | driverkit, driverkit.family.networking, driverkit.transport.pci |
+| RTL8127App | `net.wizzz.RTL8127App` | `RTL8127App Developer ID` | system-extension.install (+ hardened runtime) |
+
+Création des profils sur developer.apple.com (Certificates, Identifiers &
+Profiles) :
+
+1. Identifiers → App IDs → `net.wizzz.RTL8127Dext` : cocher **DriverKit**,
+   **DriverKit Family Networking**, **DriverKit Transport PCI**. (Créer
+   l'App ID s'il n'existe pas, type App, bundle ID explicite.)
+2. Identifiers → `net.wizzz.RTL8127App` : cocher **System Extension**.
+3. Profiles → + → Distribution → **Developer ID** → App ID
+   `net.wizzz.RTL8127Dext` → certificat Developer ID Application → nom
+   exactement `RTL8127Dext Developer ID`. Apple propose la liste des
+   entitlements DriverKit à inclure : sélectionner les trois.
+4. Même chose pour `net.wizzz.RTL8127App`, nom `RTL8127App Developer ID`.
+5. Télécharger les deux `.provisionprofile` et les ouvrir (double-clic) sur
+   le Mac de build.
+
+Ensuite `packaging/sign-and-notarize.sh <version>` construit, vérifie les
+signatures et entitlements, notarise (`notarytool`, profil de credentials
+`rtl8127-notary` à créer une fois avec `xcrun notarytool store-credentials`),
+agrafe le ticket et produit `dist/RTL8127App-<version>.zip`. Avec
+`DEVELOPER_ID_INSTALLER` défini, il produit aussi un `.pkg` signé et
+notarisé (nécessite un certificat Developer ID Installer).
+
+Sans les profils installés, construire avec `CODE_SIGNING_ALLOWED=NO`
+(c'est ce que fait la CI).
+
+## Développement sans profil signé
 
 ```bash
 systemextensionsctl developer on        # exécution depuis le build Xcode

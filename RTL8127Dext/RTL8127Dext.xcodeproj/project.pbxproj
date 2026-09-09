@@ -238,8 +238,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = RTL8127Dext/RTL8127Dext.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = LRA39582TA;
+				PROVISIONING_PROFILE_SPECIFIER = "RTL8127Dext Developer ID";
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/RTL8127Dext/compat",
@@ -264,8 +266,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = RTL8127Dext/RTL8127Dext.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = LRA39582TA;
+				PROVISIONING_PROFILE_SPECIFIER = "RTL8127Dext Developer ID";
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/RTL8127Dext/compat",
@@ -289,8 +293,12 @@
 		AA10000000000000000000E4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RTL8127App/RTL8127App.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = LRA39582TA;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PROVISIONING_PROFILE_SPECIFIER = "RTL8127App Developer ID";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -308,8 +316,12 @@
 		AA10000000000000000000E5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RTL8127App/RTL8127App.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = LRA39582TA;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PROVISIONING_PROFILE_SPECIFIER = "RTL8127App Developer ID";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
