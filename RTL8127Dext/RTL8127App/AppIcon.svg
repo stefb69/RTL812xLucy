@@ -5,34 +5,26 @@
       <stop offset="1" stop-color="#0e7490"/>
     </linearGradient>
     <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
       <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.02"/>
       <stop offset="1" stop-color="#000000" stop-opacity="0.10"/>
     </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
-      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/>
-    </filter>
   </defs>
-  <!-- macOS squircle: 1024 canvas, 824 icon with ~ 185 radius -->
-  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)" filter="url(#shadow)"/>
-  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#gloss)"/>
-
-  <!-- network glyph: hub + 3 nodes -->
-  <g stroke="#ffffff" stroke-width="30" stroke-linecap="round" fill="none" opacity="0.95">
-    <line x1="512" y1="470" x2="332" y2="300"/>
-    <line x1="512" y1="470" x2="692" y2="300"/>
-    <line x1="512" y1="470" x2="512" y2="262"/>
+  <!-- full-bleed: the system applies its own squircle mask and glass -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#gloss)"/>
+  <g stroke="#ffffff" stroke-width="34" stroke-linecap="round" fill="none" opacity="0.95">
+    <line x1="512" y1="470" x2="312" y2="280"/>
+    <line x1="512" y1="470" x2="712" y2="280"/>
+    <line x1="512" y1="470" x2="512" y2="236"/>
   </g>
   <g fill="#ffffff">
-    <circle cx="512" cy="470" r="58"/>
-    <circle cx="332" cy="300" r="40"/>
-    <circle cx="692" cy="300" r="40"/>
-    <circle cx="512" cy="262" r="40"/>
+    <circle cx="512" cy="470" r="64"/>
+    <circle cx="312" cy="280" r="46"/>
+    <circle cx="712" cy="280" r="46"/>
+    <circle cx="512" cy="236" r="46"/>
   </g>
-  <!-- SFP+ cage under the hub -->
-  <rect x="392" y="540" width="240" height="60" rx="14" fill="#ffffff" opacity="0.95"/>
-  <rect x="416" y="556" width="192" height="28" rx="6" fill="#0e7490" opacity="0.9"/>
-
-  <!-- 10G label -->
-  <text x="512" y="790" text-anchor="middle" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="800" font-size="200" fill="#ffffff" letter-spacing="-6">10G</text>
+  <rect x="382" y="548" width="260" height="66" rx="16" fill="#ffffff" opacity="0.95"/>
+  <rect x="408" y="566" width="208" height="30" rx="7" fill="#0e7490" opacity="0.9"/>
+  <text x="512" y="820" text-anchor="middle" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="800" font-size="230" fill="#ffffff" letter-spacing="-8">10G</text>
 </svg>
