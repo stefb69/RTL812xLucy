@@ -183,11 +183,12 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.refreshHardware()
         }
-        // Find out whether the extension is already installed; activate if not.
-        let request = OSSystemExtensionRequest.propertiesRequest(
-            forExtensionWithIdentifier: Self.dextIdentifier, queue: .main)
-        request.delegate = self
-        OSSystemExtensionManager.shared.submitRequest(request)
+        // Always submit an activation request: sysextd completes it at once
+        // when this exact version is already active, and runs the
+        // replacement flow when the app carries a newer driver. Only asking
+        // for properties would leave an older driver in place after an
+        // upgrade.
+        activate()
     }
 
     func refreshHardware() {
@@ -218,21 +219,12 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     // MARK: OSSystemExtensionRequestDelegate
 
     func request(_ request: OSSystemExtensionRequest,
-                 foundProperties properties: [OSSystemExtensionProperties]) {
-        if properties.contains(where: { $0.isEnabled && !$0.isUninstalling }) {
-            state = .enabled
-        } else if properties.contains(where: { $0.isAwaitingUserApproval }) {
-            state = .waitingForApproval
-            if !openedSettings { openedSettings = true; openSettings() }
-        } else {
-            activate()
-        }
-    }
-
-    func request(_ request: OSSystemExtensionRequest,
                  actionForReplacingExtension existing: OSSystemExtensionProperties,
                  withExtension ext: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {
-        .replace
+        NSLog("RTL8127App: replacing driver %@ (%@) with %@ (%@)",
+              existing.bundleShortVersion, existing.bundleVersion,
+              ext.bundleShortVersion, ext.bundleVersion)
+        return .replace
     }
 
     func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
