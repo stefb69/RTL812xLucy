@@ -142,7 +142,7 @@ built from reports.
   macOS has no medium constant for those; it is a display issue only.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
   disabled for this chip).
-- The dext currently does MTU 1500 only, no jumbo frames and no Wake on LAN.
+- The dext has no Wake on LAN.
 
 ## Help wanted
 

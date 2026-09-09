@@ -55,8 +55,25 @@ porté et validé.
   `RegisterEthernetInterface(mac, pool, queues, 4)`. `wmb()` avant doorbell.
 - **D5 — offloads (fait, code complet)** : checksum TX (opts2 identiques au
   kext depuis `getTxChecksumInfo`), checksum RX (`setRxChecksumInfo` depuis
-  les bits opts2), `getHardwareAssists`. MTU 1500 (jumbo: plus tard), pas de
-  WoL.
+  les bits opts2), `getHardwareAssists`. Pas de WoL.
+- **D6 — perf (fait, code complet, 10 sept. 2026)** :
+  - **TSO IPv4/IPv6** : même recette que `outputStart()` du kext
+    (GiantSendv4/v6 + offset TCP dans opts1, MSS dans opts2, pseudo-checksum
+    préchargé dans l'en-tête TCP). Le pool TX a des tampons de 16 Ko, un par
+    paquet ; `getTSOOptions` borne le paquet TSO à cette taille. MSS 11 bits :
+    en jumbo la taille de segment est plafonnée à 2047, trames plus petites
+    mais correctes. `setHardwareAssists(assists, mask)` suit l'état demandé
+    par la pile.
+  - **Jumbo jusqu'à 9000** : pool RX séparé, tampons 9216, `RxMaxSize`
+    réécrit à chaud, longueur RX lue sur 14 bits (`0x3fff`, comme r8127 ; le
+    kext utilisait `0x1fff`, faux au-delà de 8191 octets sur arm64 où les
+    tampons font 16 Ko — corrigé aussi).
+  - **Mitigation d'interruptions** portée de l'ISR du kext : après une
+    rafale TxOK/RxOK, `TIMER_INT0`/`TCTR0` = 0x5000 et masque « timer »
+    (TxOK coupé, RxOK + PCSTimeout), retour au masque normal sur PCSTimeout
+    ou LinkChg.
+  - Pools mappés dext + device (`PoolFlagMapToDext | PoolFlagMapToDevice`),
+    enregistrement `registerEthernetInterface(mac, queues, txPool, rxPool)`.
 - **App hôte (fait)** : `RTL8127App` (SwiftUI, cible du même xcodeproj),
   embarque le dext dans `Contents/Library/SystemExtensions`. Au lancement
   elle interroge l'état (`propertiesRequest`), active le dext si besoin,
@@ -145,4 +162,10 @@ temps (le kext a IOProbeScore 5000, le dext 6000 — désinstaller le kext de
   à mesurer en D4 (taille de pool, batching, `IOUserNetworkPacketPoller`).
 - MSI : vérifier l'activation de la capability MSI côté PCIDriverKit
   (ConfigurationWrite sur la capability vs prise en charge automatique).
-- `SetMTU`/jumbo et stats étendues : après D5.
+- Stats étendues (`addHardwareCountsWithInterfaceStatistics`) : plus tard.
+- VLAN hardware (tag out-of-band NDK → `TxVlanTag`) : plus tard.
+- Mémoire des pools : ~20 Mo TX + ~14 Mo RX câblés en permanence ; à revoir
+  si ça gêne (tampons TX plus petits + TSO plafonné plus bas).
+- Devenir du kext : une fois le dext validé à line-rate sur la carte, ne plus
+  le livrer dans les releases (il reste dans l'arbre comme référence et
+  support de la PR upstream).

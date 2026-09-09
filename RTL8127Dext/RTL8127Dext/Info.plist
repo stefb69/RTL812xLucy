@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>DEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>OSBundleUsageDescription</key>
 	<string>Driver for Realtek RTL812x Ethernet controllers: RTL8125 (2.5GbE), RTL8126 (5GbE) and RTL8127 (10GbE, including the RTL8127ATF SFP+ fiber variant).</string>
 	<key>IOKitPersonalities</key>

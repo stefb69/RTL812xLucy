@@ -58,6 +58,9 @@ public:
     virtual IOReturn setMaxTransferUnit(uint32_t mtu) override LOCALONLY;
     virtual uint32_t getMaxTransferUnit() override LOCALONLY;
     virtual uint32_t getHardwareAssists() override LOCALONLY;
+    virtual IOReturn setHardwareAssists(uint32_t hardwareAssists,
+                                        uint32_t hardwareAssistsMask) override LOCALONLY;
+    virtual IOReturn getTSOOptions(IOUserNetworkTSOOptions *options) override LOCALONLY;
     virtual IOReturn getHardwareAddress(ether_addr_t *addr) override LOCALONLY;
 };
 

@@ -54,10 +54,16 @@ notarize() {
     fi
 }
 
-echo "== Building signed Release (app + embedded dext)"
+# Build number: monotonic integer derived from the version (0.2.0 -> 200,
+# 1.0.3 -> 100003). sysextd compares it to decide whether a new dext
+# replaces the installed one.
+BUILD_NUMBER="$(printf '%s' "$VERSION" | awk -F. '{ print $1*10000 + $2*100 + $3 }')"
+
+echo "== Building signed Release (app + embedded dext) $VERSION ($BUILD_NUMBER)"
 xcodebuild -project "$PROJ" -target RTL8127App -configuration Release \
     build \
     MARKETING_VERSION="$VERSION" \
+    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     OTHER_CODE_SIGN_FLAGS="--timestamp" \
     RUN_CLANG_STATIC_ANALYZER=NO | tail -20
 

@@ -1215,7 +1215,7 @@ UInt32 RTL8125::rxInterrupt(IONetworkInterface *interface, uint32_t maxCount, IO
         }
         
         descStatus2 = OSSwapLittleToHostInt32(desc->cmd.opts2);
-        pktSize = (descStatus1 & 0x1fff);
+        pktSize = (descStatus1 & 0x3fff);   /* 14-bit length field, as r8127 */
         bufPkt = rxBufArray[rxNextDescIndex].mbuf;
         //DebugLog("rxInterrupt(): descStatus1=0x%x, descStatus2=0x%x, pktSize=%u\n", descStatus1, descStatus2, pktSize);
         

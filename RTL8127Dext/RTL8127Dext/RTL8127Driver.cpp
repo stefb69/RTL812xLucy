@@ -37,6 +37,11 @@
 #include <NetworkingDriverKit/IOUserNetworkRxSubmissionQueue.h>
 #include <NetworkingDriverKit/IOUserNetworkRxCompletionQueue.h>
 
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <netinet/tcp.h>
+
 /*
  * rtl812xx.h's LinkStatus enumerator collides with the NDK LinkStatus
  * type; rename it for this translation unit only.
@@ -67,8 +72,25 @@ struct RtlDextRxDesc {
 #define kRxDescSize (kNumRxDesc * sizeof(struct RtlDextRxDesc))
 #define kStatSize   PAGE_SIZE
 
-#define kRxBufferSize   2048
-#define kPoolPackets    (kNumTxDesc + kNumRxDesc + 512)
+/*
+ * Buffer sizing. One buffer per packet on both sides (the NDK packet API
+ * exposes a single data pointer per packet), so:
+ *  - RX buffers hold the largest frame the chip is allowed to receive:
+ *    9000-byte MTU + VLAN Ethernet header + FCS, with headroom;
+ *  - TX buffers bound the size of a TSO packet the stack may hand us,
+ *    advertised through getTSOOptions().
+ * The RX descriptor length field is 14 bits, so both fit.
+ */
+#define kMaxMtu         9000
+#define kRxBufferSize   9216
+#define kTxBufferSize   16384
+#define kTsoMaxPacket   (kTxBufferSize - 256)
+#define kRxPoolPackets  (kNumRxDesc + 512)
+#define kTxPoolPackets  (kNumTxDesc + 256)
+#define kMacHdrLen      14
+#define kIPv6HdrLen     40
+#define kTxDescLenMask  0xFFFF
+#define MSSShift_8125   18      /* MSS position in opts2, as in the kext */
 #define kFifoCapacity   2048    /* power of two, > ring size */
 #define kFifoMask       (kFifoCapacity - 1)
 
@@ -133,7 +155,8 @@ struct RTL8127Driver_IVars {
     volatile RtlDextRxDesc *rxRing;
 
     /* NDK objects. */
-    IOUserNetworkPacketBufferPool *pool;
+    IOUserNetworkPacketBufferPool *txPool;
+    IOUserNetworkPacketBufferPool *rxPool;
     IOUserNetworkTxSubmissionQueue *txSubQueue;
     IOUserNetworkTxCompletionQueue *txCompQueue;
     IOUserNetworkRxSubmissionQueue *rxSubQueue;
@@ -152,6 +175,9 @@ struct RTL8127Driver_IVars {
     uint32_t mediaCount;
     uint32_t currentMedia;
     uint32_t mtu;
+
+    /* Offloads the stack asked for (setHardwareAssists), TSO in particular. */
+    bool tsoEnabled;
 
     /* One-shot warnings: a full hand-off FIFO means the framework thread
      * fell behind and we had to drop a packet/completion. Logged once per
@@ -174,6 +200,7 @@ bool RTL8127Driver::init()
         return false;
 
     ivars->mtu = 1500;
+    ivars->tsoEnabled = true;
     return true;
 }
 
@@ -253,6 +280,52 @@ static void freeDmaBuffer(IOBufferMemoryDescriptor **md, IODMACommand **cmd)
     }
 }
 
+#pragma mark - TSO helpers
+
+static inline uint16_t bswap16(uint16_t v) { return __builtin_bswap16(v); }
+
+/*
+ * The RTL8125/8127 giant-send engine wants the TCP checksum field preloaded
+ * with the pseudo-header checksum (addresses + protocol, no length), exactly
+ * like the kext's prepareTSO4/6(). NDK packets carry the VLAN tag out of
+ * band, so the L3 header always starts right after the 14-byte MAC header.
+ * Returns the TCP header offset from the start of the frame.
+ */
+static uint32_t prepareTSO4(uint8_t *frame)
+{
+    struct ip *iph = (struct ip *)(frame + kMacHdrLen);
+    uint32_t il = (uint32_t)(iph->ip_hl & 0x0f) << 2;
+    struct tcphdr *th = (struct tcphdr *)((uint8_t *)iph + il);
+    const uint16_t *addr = (const uint16_t *)&iph->ip_src;
+    uint32_t csum = IPPROTO_TCP;
+
+    for (int i = 0; i < 4; i++) {
+        csum += bswap16(addr[i]);
+        csum += (csum >> 16);
+        csum &= 0xffff;
+    }
+    th->th_sum = bswap16((uint16_t)csum);
+    return kMacHdrLen + il;
+}
+
+static uint32_t prepareTSO6(uint8_t *frame)
+{
+    struct ip6_hdr *ip6 = (struct ip6_hdr *)(frame + kMacHdrLen);
+    struct tcphdr *th = (struct tcphdr *)((uint8_t *)ip6 + kIPv6HdrLen);
+    uint16_t addr[16];      /* src + dst, 32 bytes at offset 8 of the header */
+    uint32_t csum = IPPROTO_TCP;
+
+    ip6->ip6_ctlun.ip6_un1.ip6_un1_plen = 0;
+    memcpy(addr, (uint8_t *)ip6 + 8, sizeof(addr));
+    for (int i = 0; i < 16; i++) {
+        csum += bswap16(addr[i]);
+        csum += (csum >> 16);
+        csum &= 0xffff;
+    }
+    th->th_sum = bswap16((uint16_t)csum);
+    return kMacHdrLen + kIPv6HdrLen;
+}
+
 #pragma mark - NDK queue actions
 
 /*
@@ -278,32 +351,71 @@ static uint32_t txDequeueAction(OSObject *target,
         IOUserNetworkPacket *pkt = packets[i];
         uint32_t len = pkt->getDataLength();
         uint64_t iova = pkt->getDataIOVirtualAddress();
-        uint32_t opts1, opts2 = 0;
+        uint32_t cmd = 0, opts1, opts2 = 0;
         uint32_t index;
 
         if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= 2)
             break;
 
-        /* Checksum offload, same opts2 bits as the kext outputStart(). */
-        IOUserNetworkPacketTxChecksumFlags csum = 0;
-        uint16_t start = 0, stuff = 0;
-        pkt->getTxChecksumInfo(&csum, &start, &stuff);
+        if (len == 0 || len > kTxBufferSize) {
+            /* Cannot happen with our pool geometry; don't feed the chip. */
+            pkt->setCompletionStatus(kIOReturnBadArgument);
+            if (!fifoPush(&iv->txDoneFifo, pkt))
+                iv->txPool->deallocatePacket(pkt);
+            accepted++;
+            continue;
+        }
 
-        if (csum & kIOUserNetworkPacketTxCsumTCPIPV4)
-            opts2 = (TxIPCS_C | TxTCPCS_C);
-        else if (csum & kIOUserNetworkPacketTxCsumUDPIPV4)
-            opts2 = (TxIPCS_C | TxUDPCS_C);
-        else if (csum & kIOUserNetworkPacketTxCsumTCPIPV6)
-            opts2 = (TxTCPCS_C | TxIPV6F_C | ((14 + 40) << TCPHO_SHIFT));
-        else if (csum & kIOUserNetworkPacketTxCsumUDPIPV6)
-            opts2 = (TxUDPCS_C | TxIPV6F_C | ((14 + 40) << TCPHO_SHIFT));
-        else if (csum & kIOUserNetworkPacketTxCsumIPHdr)
-            opts2 = TxIPCS_C;
+        /*
+         * TSO: same descriptor recipe as the kext outputStart(). A TSO
+         * packet that fits in one MTU-sized frame is sent as a plain
+         * checksum-offloaded frame. The chip's MSS field is 11 bits, so on
+         * jumbo MTUs the segment size is clamped -- smaller frames on the
+         * wire, still correct.
+         */
+        uint16_t mss = 0;
+        IOUserNetworkPacketTSOFlags tso = 0;
+        pkt->getTSOInfo(&mss, &tso);
+
+        if (iv->tsoEnabled && (tso & (kIOUserNetworkPacketTSOIPV4 | kIOUserNetworkPacketTSOIPV6)) &&
+            (len - kMacHdrLen) > iv->mtu) {
+            uint8_t *frame = (uint8_t *)pkt->getDataVirtualAddress();
+            uint32_t tcpOff;
+            uint32_t segsz = mss;
+
+            if (segsz == 0 || segsz > MSS_MAX)
+                segsz = MSS_MAX;
+
+            if (tso & kIOUserNetworkPacketTSOIPV4) {
+                tcpOff = prepareTSO4(frame);
+                cmd = (GiantSendv4 | (tcpOff << GTTCPHO_SHIFT));
+            } else {
+                tcpOff = prepareTSO6(frame);
+                cmd = (GiantSendv6 | (tcpOff << GTTCPHO_SHIFT));
+            }
+            opts2 = ((segsz & MSSMask) << MSSShift_8125);
+        } else {
+            /* Checksum offload, same opts2 bits as the kext outputStart(). */
+            IOUserNetworkPacketTxChecksumFlags csum = 0;
+            uint16_t start = 0, stuff = 0;
+            pkt->getTxChecksumInfo(&csum, &start, &stuff);
+
+            if ((csum & kIOUserNetworkPacketTxCsumTCPIPV4) || (tso & kIOUserNetworkPacketTSOIPV4))
+                opts2 = (TxIPCS_C | TxTCPCS_C);
+            else if (csum & kIOUserNetworkPacketTxCsumUDPIPV4)
+                opts2 = (TxIPCS_C | TxUDPCS_C);
+            else if ((csum & kIOUserNetworkPacketTxCsumTCPIPV6) || (tso & kIOUserNetworkPacketTSOIPV6))
+                opts2 = (TxTCPCS_C | TxIPV6F_C | ((kMacHdrLen + kIPv6HdrLen) << TCPHO_SHIFT));
+            else if (csum & kIOUserNetworkPacketTxCsumUDPIPV6)
+                opts2 = (TxUDPCS_C | TxIPV6F_C | ((kMacHdrLen + kIPv6HdrLen) << TCPHO_SHIFT));
+            else if (csum & kIOUserNetworkPacketTxCsumIPHdr)
+                opts2 = TxIPCS_C;
+        }
 
         index = hw->txNextDescIndex;
         volatile RtlDextTxDesc *desc = &iv->txRing[index];
 
-        opts1 = (len | FirstFrag | LastFrag);
+        opts1 = ((len & kTxDescLenMask) | cmd | FirstFrag | LastFrag);
         if (index == kTxLastDesc)
             opts1 |= RingEnd;
 
@@ -338,7 +450,7 @@ static uint32_t txQueryFreeSpace(OSObject *target,
         freeDesc = 0;
 
     if (freeSpaceBytes)
-        *freeSpaceBytes = (uint32_t)freeDesc * kRxBufferSize;
+        *freeSpaceBytes = (uint32_t)freeDesc * kTxBufferSize;
 
     return (uint32_t)freeDesc;
 }
@@ -415,8 +527,8 @@ static bool rxRingRefill(RTL8127Driver_IVars *iv)
             continue;
 
         IOUserNetworkPacket *pkt = fifoPop(&iv->rxFreeFifo);
-        if (!pkt && iv->pool) {
-            if (iv->pool->allocatePacket(&pkt) != kIOReturnSuccess)
+        if (!pkt && iv->rxPool) {
+            if (iv->rxPool->allocatePacket(&pkt) != kIOReturnSuccess)
                 pkt = nullptr;
         }
         if (!pkt) {
@@ -461,7 +573,7 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
                     iv->txDropWarned = true;
                     Log("tx completion FIFO full - dropping completions (framework thread behind)");
                 }
-                iv->pool->deallocatePacket(pkt);
+                iv->txPool->deallocatePacket(pkt);
             }
             didWork = true;
         }
@@ -495,7 +607,7 @@ static void rxRingService(RTL8127Driver *driver)
         if (!pkt)
             break;
 
-        length = (int32_t)(status & 0x1fff) - 4 /* FCS */;
+        length = (int32_t)(status & 0x3fff) - 4 /* FCS */;
 
         if ((status & RxRES) || length <= 0 ||
             !(status & FirstFrag) || !(status & LastFrag)) {
@@ -529,7 +641,7 @@ static void rxRingService(RTL8127Driver *driver)
                     iv->rxDropWarned = true;
                     Log("rx FIFO full - dropping packets (framework thread behind)");
                 }
-                iv->pool->deallocatePacket(pkt);
+                iv->rxPool->deallocatePacket(pkt);
             }
             delivered = true;
         }
@@ -615,8 +727,9 @@ void IMPL(RTL8127Driver, InterruptOccurred)
     if ((status == 0xFFFFFFFF) || !status)
         return;
 
-    /* Ack. */
-    RTL_W32(tp, ISR0_8125, status);
+    /* Mask, then ack (same order as the kext). */
+    RTL_W32(tp, IMR0_8125, 0x0000);
+    RTL_W32(tp, ISR0_8125, (status & ~RxFIFOOver));
 
     if (iv->interfaceEnabled) {
         if (status & (RxOK | RxDescUnavail))
@@ -624,10 +737,27 @@ void IMPL(RTL8127Driver, InterruptOccurred)
 
         if (status & (TxOK | RxOK | PCSTimeout))
             txRingReclaim(this, false);
+
+        /*
+         * Interrupt mitigation, as validated in the kext at line rate:
+         * after a burst, stop taking TxOK interrupts and let a chip timer
+         * (PCSTimeout) sweep the completions instead; RxOK stays armed.
+         */
+        if (status & (TxOK | RxOK)) {
+            RTL_W32(tp, TIMER_INT0_8125, 0x5000);
+            RTL_W32(tp, TCTR0_8125, 0x5000);
+            hw->intrMask = hw->intrMaskTimer;
+        } else if (status & PCSTimeout) {
+            RTL_W32(tp, TIMER_INT0_8125, 0x0000);
+            hw->intrMask = hw->intrMaskRxTx;
+        }
     }
 
-    if (status & LinkChg)
+    if (status & LinkChg) {
         updateLinkStatus(this);
+        RTL_W32(tp, TIMER_INT0_8125, 0x0000);
+        hw->intrMask = hw->intrMaskRxTx;
+    }
 
     RTL_W32(tp, IMR0_8125, hw->intrMask);
 }
@@ -811,33 +941,48 @@ kern_return_t IMPL(RTL8127Driver, Start)
     ivars->intSource->SetHandler(ivars->intAction);
     ivars->intSource->SetEnable(true);
 
-    /* NDK pool + queues. */
+    /*
+     * NDK pools + queues. Separate TX and RX pools: TX buffers are sized
+     * for TSO packets, RX buffers for jumbo frames. Both are mapped into
+     * this process (TSO patches the TCP header) and into the device.
+     */
     {
         IOUserNetworkPacketBufferPoolOptions opts = {};
-        opts.packetCount = kPoolPackets;
-        opts.bufferCount = kPoolPackets;
-        opts.bufferSize = kRxBufferSize;
         opts.maxBuffersPerPacket = 1;
         opts.memorySegmentSize = 0;
-        opts.poolFlags = 0;
+        opts.poolFlags = (PoolFlagMapToDext | PoolFlagMapToDevice);
         opts.dmaSpecification.maxAddressBits = 64;
 
+        opts.packetCount = kTxPoolPackets;
+        opts.bufferCount = kTxPoolPackets;
+        opts.bufferSize = kTxBufferSize;
         ret = IOUserNetworkPacketBufferPool::CreateWithOptions(ivars->pciDevice,
-                                                               "RTL8127Pool",
-                                                               &opts, &ivars->pool);
+                                                               "RTL8127TxPool",
+                                                               &opts, &ivars->txPool);
         if (ret != kIOReturnSuccess) {
-            Log("packet pool creation failed: 0x%x", ret);
+            Log("tx packet pool creation failed: 0x%x", ret);
+            goto fail;
+        }
+
+        opts.packetCount = kRxPoolPackets;
+        opts.bufferCount = kRxPoolPackets;
+        opts.bufferSize = kRxBufferSize;
+        ret = IOUserNetworkPacketBufferPool::CreateWithOptions(ivars->pciDevice,
+                                                               "RTL8127RxPool",
+                                                               &opts, &ivars->rxPool);
+        if (ret != kIOReturnSuccess) {
+            Log("rx packet pool creation failed: 0x%x", ret);
             goto fail;
         }
     }
 
-    ivars->txSubQueue = IOUserNetworkTxSubmissionQueue::withPool(ivars->pool,
+    ivars->txSubQueue = IOUserNetworkTxSubmissionQueue::withPool(ivars->txPool,
         kNumTxDesc, 0, this, txQueryFreeSpace, txDequeueAction);
-    ivars->txCompQueue = IOUserNetworkTxCompletionQueue::withPool(ivars->pool,
+    ivars->txCompQueue = IOUserNetworkTxCompletionQueue::withPool(ivars->txPool,
         kNumTxDesc, 0, this, txEnqueueAction);
-    ivars->rxSubQueue = IOUserNetworkRxSubmissionQueue::withPool(ivars->pool,
+    ivars->rxSubQueue = IOUserNetworkRxSubmissionQueue::withPool(ivars->rxPool,
         kNumRxDesc, kNumRxDesc, 1, this, rxDequeueAction);
-    ivars->rxCompQueue = IOUserNetworkRxCompletionQueue::withPool(ivars->pool,
+    ivars->rxCompQueue = IOUserNetworkRxCompletionQueue::withPool(ivars->rxPool,
         kNumRxDesc, 1, this, rxEnqueueAction);
 
     if (!ivars->txSubQueue || !ivars->txCompQueue ||
@@ -854,9 +999,9 @@ kern_return_t IMPL(RTL8127Driver, Start)
         ether_addr_t mac = {};
         memcpy(mac.octet, hw->currMacAddr.bytes, 6);
 
-        ret = RegisterEthernetInterface(mac, ivars->pool, queues, 4);
+        ret = registerEthernetInterface(mac, queues, 4, ivars->txPool, ivars->rxPool);
         if (ret != kIOReturnSuccess) {
-            Log("RegisterEthernetInterface failed: 0x%x", ret);
+            Log("registerEthernetInterface failed: 0x%x", ret);
             goto fail;
         }
     }
@@ -886,7 +1031,7 @@ kern_return_t IMPL(RTL8127Driver, Start)
     }
     ivars->currentMedia = kIOUserNetworkMediaEthernetAuto;
 
-    Log("started: D2-D5 datapath ready, waiting for interface enable");
+    Log("started: datapath ready (TSO, jumbo up to %u), waiting for interface enable", kMaxMtu);
 
     RegisterService();
     return kIOReturnSuccess;
@@ -926,16 +1071,18 @@ kern_return_t IMPL(RTL8127Driver, Stop)
          * reference the pool, so drop them first. Releasing the pool
          * reclaims every packet buffer it backs.
          */
-        if (iv->pool) {
+        if (iv->rxPool) {
             for (uint32_t i = 0; i < kNumRxDesc; i++) {
                 if (iv->rxPkt[i]) {
-                    iv->pool->deallocatePacket(iv->rxPkt[i]);
+                    iv->rxPool->deallocatePacket(iv->rxPkt[i]);
                     iv->rxPkt[i] = nullptr;
                 }
             }
+        }
+        if (iv->txPool) {
             for (uint32_t i = 0; i < kNumTxDesc; i++) {
                 if (iv->txPkt[i]) {
-                    iv->pool->deallocatePacket(iv->txPkt[i]);
+                    iv->txPool->deallocatePacket(iv->txPkt[i]);
                     iv->txPkt[i] = nullptr;
                 }
             }
@@ -944,7 +1091,8 @@ kern_return_t IMPL(RTL8127Driver, Stop)
         OSSafeReleaseNULL(iv->txCompQueue);
         OSSafeReleaseNULL(iv->rxSubQueue);
         OSSafeReleaseNULL(iv->rxCompQueue);
-        OSSafeReleaseNULL(iv->pool);
+        OSSafeReleaseNULL(iv->txPool);
+        OSSafeReleaseNULL(iv->rxPool);
 
         if (iv->opened && iv->pciDevice) {
             iv->pciDevice->Close(this, 0);
@@ -989,7 +1137,7 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
         /* Drop ring-held rx packets back into the pool. */
         for (uint32_t i = 0; i < kNumRxDesc; i++) {
             if (iv->rxPkt[i]) {
-                iv->pool->deallocatePacket(iv->rxPkt[i]);
+                iv->rxPool->deallocatePacket(iv->rxPkt[i]);
                 iv->rxPkt[i] = nullptr;
             }
         }
@@ -1076,11 +1224,22 @@ IOReturn RTL8127Driver::handleChosenMedia(MediaWord chosenMedia)
 
 IOReturn RTL8127Driver::setMaxTransferUnit(uint32_t mtu)
 {
-    if (mtu > 1500)
+    RTL8127Hw *hw = ivars->hw;
+    struct rtl8125_private *tp = &hw->linuxData;
+
+    if (mtu < ETH_ZLEN || mtu > kMaxMtu)
         return kIOReturnUnsupported;
 
     ivars->mtu = mtu;
-    ivars->hw->mtu = mtu;
+    hw->mtu = mtu;
+
+    /* Same bookkeeping as the kext setMaxPacketSize(). */
+    tp->rms = mtu + VLAN_ETH_HLEN + ETH_FCS_LEN;
+    tp->eee.tx_lpi_timer = mtu + ETH_HLEN + 0x20;
+    if (ivars->interfaceEnabled)
+        RTL_W16(tp, RxMaxSize, tp->rms);
+
+    Log("MTU %u (rms %u)", mtu, (unsigned int)tp->rms);
     return kIOReturnSuccess;
 }
 
@@ -1091,10 +1250,34 @@ uint32_t RTL8127Driver::getMaxTransferUnit()
 
 uint32_t RTL8127Driver::getHardwareAssists()
 {
-    return (kIOUserNetworkHWAssistTxChecksumIPHdr |
-            kIOUserNetworkHWAssistTxChecksumTCP |
-            kIOUserNetworkHWAssistTxChecksumUDP |
-            kIOUserNetworkHWAssistRxChecksum);
+    uint32_t assists = (kIOUserNetworkHWAssistTxChecksumIPHdr |
+                        kIOUserNetworkHWAssistTxChecksumTCP |
+                        kIOUserNetworkHWAssistTxChecksumUDP |
+                        kIOUserNetworkHWAssistRxChecksum);
+
+    if (ivars->tsoEnabled)
+        assists |= (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6);
+    return assists;
+}
+
+IOReturn RTL8127Driver::setHardwareAssists(uint32_t hardwareAssists, uint32_t hardwareAssistsMask)
+{
+    if (hardwareAssistsMask & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) {
+        ivars->tsoEnabled = (hardwareAssists & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) != 0;
+        Log("TSO %s by the stack", ivars->tsoEnabled ? "enabled" : "disabled");
+    }
+    return kIOReturnSuccess;
+}
+
+IOReturn RTL8127Driver::getTSOOptions(IOUserNetworkTSOOptions *options)
+{
+    if (!options)
+        return kIOReturnBadArgument;
+
+    /* Largest TSO packet we accept: it has to fit in one TX buffer. */
+    options->tso_mtu4 = kTsoMaxPacket;
+    options->tso_mtu6 = kTsoMaxPacket;
+    return kIOReturnSuccess;
 }
 
 IOReturn RTL8127Driver::getHardwareAddress(ether_addr_t *addr)

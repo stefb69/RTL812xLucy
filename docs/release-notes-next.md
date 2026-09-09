@@ -20,7 +20,12 @@ RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs.
 **Changes since beta2**
 
 - <kext fixes for macOS 26.6, if any>
-- <dext status: first hardware-validated build / signed build / unchanged>
+- Dext: TCP segmentation offload (IPv4/IPv6), jumbo frames up to 9000,
+  interrupt mitigation ported from the kext. <hardware status>
+- Kext: RX length field read on 14 bits; frames over 8191 bytes (jumbo on
+  Apple Silicon) were truncated.
+- <if the dext reached line rate on hardware: this is the last release that
+  ships the kext; it stays in the tree as the upstream PR vehicle.>
 - README rewritten with step-by-step Apple Silicon install instructions,
   tested-setups table and known limitations.
 - Issue templates: hardware reports are now the way to tell us what works.
@@ -38,4 +43,4 @@ RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs.
 
 - Link medium displayed as 10GBase-T over SFP+/DAC (cosmetic).
 - RTL8127A (RJ45) path ported but untested. Reports welcome.
-- Dext: MTU 1500 only, no jumbo frames, no Wake on LAN.
+- Dext: no Wake on LAN.
