@@ -97,6 +97,17 @@ struct RtlDextRxDesc {
                                      * pool ran dry under 8 parallel TX streams
                                      * (511 in flight, 4.5 Gbit/s) */
 #define kNumTxQueues    4       /* one TX queue per service class: BE, BK, VI, VO */
+/*
+ * Packets allowed in flight in the TX ring. The ring itself holds 1024
+ * packets of up to 32 KB, i.e. 32 MB / ~27 ms of queue at 10 Gbit/s; with
+ * many parallel TCP streams that depth fills up, the netif's AQM then drops
+ * and the streams collapse (8 x iperf3: 4.5 Gbit/s with thousands of
+ * retransmits, 8.8 Gbit/s when the same streams are paced). Keeping the
+ * hardware queue shallow leaves the queueing to the system's AQM, which is
+ * built for that. 256 x 32 KB = 8 MB, ~7 ms worst case, and still a few
+ * hundred small frames for ACK-heavy receive traffic.
+ */
+#define kTxInflightLimit 256
 #define kMacHdrLen      14
 #define kIPv6HdrLen     40
 #define kTxDescLenMask  0xFFFF
@@ -549,7 +560,7 @@ static uint32_t txDequeueAction(OSObject *target,
         uint32_t cmd = 0, opts1, opts2 = 0;
         uint32_t index;
 
-        if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= 2) {
+        if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= (SInt32)(kNumTxDesc - kTxInflightLimit)) {
             iv->txNoSpaceCalls++;
             iv->txNoSpacePackets += packetCount - i;
             break;
@@ -687,14 +698,18 @@ static uint32_t txQueryFreeSpace(OSObject *target,
     RTL8127Driver *driver = (RTL8127Driver *)target;
     RTL8127Hw *hw = driver->ivars->hw;
     SInt32 freeDesc = __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE);
+    SInt32 inflight = kNumTxDesc - (freeDesc < 0 ? 0 : freeDesc);
+    SInt32 avail = kTxInflightLimit - inflight;
 
-    if (freeDesc < 0)
-        freeDesc = 0;
+    if (avail < 0)
+        avail = 0;
+    if (avail > freeDesc)
+        avail = freeDesc < 0 ? 0 : freeDesc;
 
     if (freeSpaceBytes)
-        *freeSpaceBytes = (uint32_t)freeDesc * kTxBufferSize;
+        *freeSpaceBytes = (uint32_t)avail * kTxBufferSize;
 
-    return (uint32_t)freeDesc;
+    return (uint32_t)avail;
 }
 
 /* TX completion: the framework collects packets we have transmitted. */
