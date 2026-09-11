@@ -98,16 +98,16 @@ struct RtlDextRxDesc {
                                      * (511 in flight, 4.5 Gbit/s) */
 #define kNumTxQueues    4       /* one TX queue per service class: BE, BK, VI, VO */
 /*
- * Packets allowed in flight in the TX ring. The ring itself holds 1024
- * packets of up to 32 KB, i.e. 32 MB / ~27 ms of queue at 10 Gbit/s; with
- * many parallel TCP streams that depth fills up, the netif's AQM then drops
- * and the streams collapse (8 x iperf3: 4.5 Gbit/s with thousands of
- * retransmits, 8.8 Gbit/s when the same streams are paced). Keeping the
- * hardware queue shallow leaves the queueing to the system's AQM, which is
- * built for that. 256 x 32 KB = 8 MB, ~7 ms worst case, and still a few
- * hundred small frames for ACK-heavy receive traffic.
+ * Bytes allowed in flight in the TX ring. The ring holds 1024 packets of up
+ * to 32 KB, i.e. 32 MB / ~27 ms of queue at 10 Gbit/s; with many parallel
+ * TCP streams that depth fills up, the netif's AQM overflows and the
+ * streams collapse (8 x iperf3: 4.5 Gbit/s with thousands of retransmits,
+ * 8.8 Gbit/s when the same streams are paced). A cap in packets does not
+ * work either: 64 packets throttled the ACKs of 8 receive streams down to
+ * 3 Gbit/s. So cap the queue in bytes: 4 MB is ~3.5 ms at line rate for bulk
+ * TSO traffic and never a constraint for small frames.
  */
-#define kTxInflightLimit 64
+#define kTxInflightBytesLimit (4u * 1024u * 1024u)
 #define kMacHdrLen      14
 #define kIPv6HdrLen     40
 #define kTxDescLenMask  0xFFFF
@@ -231,6 +231,8 @@ struct RTL8127Driver_IVars {
      * each TX packet came from (its completion goes back to that class). */
     IOUserNetworkPacket *txPkt[kNumTxDesc];
     uint8_t txPktQueue[kNumTxDesc];
+    uint32_t txPktLen[kNumTxDesc];
+    volatile SInt64 txInflightBytes;
     IOUserNetworkPacket *rxPkt[kNumRxDesc];
 
     /* Producer/consumer hand-off between interrupt and queue actions. */
@@ -579,7 +581,8 @@ static uint32_t txDequeueAction(OSObject *target,
         uint32_t cmd = 0, opts1, opts2 = 0;
         uint32_t index;
 
-        if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= (SInt32)(kNumTxDesc - kTxInflightLimit)) {
+        if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= 2 ||
+            __atomic_load_n(&iv->txInflightBytes, __ATOMIC_ACQUIRE) >= (SInt64)kTxInflightBytesLimit) {
             iv->txNoSpaceCalls++;
             iv->txNoSpacePackets += packetCount - i;
             break;
@@ -670,6 +673,8 @@ static uint32_t txDequeueAction(OSObject *target,
 
         iv->txPkt[index] = pkt;
         iv->txPktQueue[index] = (uint8_t)qidx;
+        iv->txPktLen[index] = len;
+        __atomic_fetch_add(&iv->txInflightBytes, (SInt64)len, __ATOMIC_ACQ_REL);
         desc->addr = OSSwapHostToLittleInt64(iova);
         desc->opts2 = OSSwapHostToLittleInt32(opts2);
         desc->opts1 = OSSwapHostToLittleInt32(opts1 | DescOwn);
@@ -717,20 +722,22 @@ static uint32_t txQueryFreeSpace(OSObject *target,
                                  uint32_t *freeSpaceBytes)
 {
     RTL8127Driver *driver = (RTL8127Driver *)target;
-    RTL8127Hw *hw = driver->ivars->hw;
+    RTL8127Driver_IVars *iv = driver->ivars;
+    RTL8127Hw *hw = iv->hw;
     SInt32 freeDesc = __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE);
-    SInt32 inflight = kNumTxDesc - (freeDesc < 0 ? 0 : freeDesc);
-    SInt32 avail = kTxInflightLimit - inflight;
+    SInt64 inflightBytes = __atomic_load_n(&iv->txInflightBytes, __ATOMIC_ACQUIRE);
+    SInt64 availBytes = (SInt64)kTxInflightBytesLimit - inflightBytes;
 
-    if (avail < 0)
-        avail = 0;
-    if (avail > freeDesc)
-        avail = freeDesc < 0 ? 0 : freeDesc;
-
+    if (freeDesc < 0)
+        freeDesc = 0;
+    if (availBytes <= 0 || freeDesc == 0) {
+        if (freeSpaceBytes)
+            *freeSpaceBytes = 0;
+        return 0;
+    }
     if (freeSpaceBytes)
-        *freeSpaceBytes = (uint32_t)avail * kTxBufferSize;
-
-    return (uint32_t)avail;
+        *freeSpaceBytes = (uint32_t)(availBytes > (SInt64)UINT32_MAX ? UINT32_MAX : availBytes);
+    return (uint32_t)freeDesc;
 }
 
 /* TX completion: the framework collects packets we have transmitted. */
@@ -857,6 +864,7 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
 
         iv->txPkt[index] = nullptr;
         if (pkt) {
+            __atomic_fetch_sub(&iv->txInflightBytes, (SInt64)iv->txPktLen[index], __ATOMIC_ACQ_REL);
             pkt->setCompletionStatus(abort ? kIOReturnAborted : kIOReturnSuccess);
             iv->txCompleted++;
             didWork[qidx] = true;
@@ -1033,6 +1041,7 @@ static void updateLinkStatus(RTL8127Driver *driver)
         hw->txTailPtr0 = hw->txClosePtr0 = 0;
         hw->txNextDescIndex = hw->txDirtyDescIndex = 0;
         hw->txNumFreeDesc = kNumTxDesc;
+        __atomic_store_n(&iv->txInflightBytes, (SInt64)0, __ATOMIC_RELEASE);
 
         IOReturn linkRet = driver->reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
         Log("link down, reportLinkStatus 0x%x", linkRet);
