@@ -62,6 +62,7 @@ public:
     virtual IOReturn getSupportedMediaArray(MediaWord *mediaArray,
                                             uint32_t *mediaCount) override LOCALONLY;
     virtual IOReturn handleChosenMedia(MediaWord chosenMedia) override LOCALONLY;
+    virtual MediaWord getInitialMedia() override LOCALONLY;
     virtual IOReturn setMaxTransferUnit(uint32_t mtu) override LOCALONLY;
     virtual uint32_t getMaxTransferUnit() override LOCALONLY;
     virtual uint32_t getHardwareAssists() override LOCALONLY;

@@ -241,7 +241,7 @@ bool RTL8127Driver::init()
      */
     ivars->mtu = 1500;
     ivars->hw->mtu = ivars->mtu;
-    ivars->tsoEnabled = false;   /* see getHardwareAssists() experiment */
+    ivars->tsoEnabled = true;
     return true;
 }
 
@@ -1295,6 +1295,35 @@ kern_return_t IMPL(RTL8127Driver, Start)
         }
     }
 
+    /*
+     * Media list, built BEFORE registerEthernetInterface(): the framework
+     * asks getSupportedMediaArray() during registration, and with an empty
+     * list the kernel interface ended up with no medium dictionary, an
+     * empty active medium, link speed 0 and a failing media ioctl.
+     * Derived from the chip's max PHY speed so 2.5G (8125) and
+     * 5G (8126) parts don't advertise rates they can't reach. Fiber
+     * (8127ATF) exposes the forced 10G/1G SerDes modes.
+     */
+    ivars->mediaCount = 0;
+    ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernetAuto;
+    if (ivars->fiberMode) {
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseSR;
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet1000BaseSX;
+    } else {
+        UInt32 maxSpeed = tp->HwSuppMaxPhyLinkSpeed;
+
+        if (maxSpeed >= SPEED_10000)
+            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseT;
+        if (maxSpeed >= SPEED_5000)
+            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet5000BaseT;
+        if (maxSpeed >= SPEED_2500)
+            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet2500BaseT;
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet1000BaseT;
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet100BaseTX;
+        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10BaseT;
+    }
+    ivars->currentMedia = kIOUserNetworkMediaEthernetAuto;
+
     ivars->txLock = IOLockAlloc();
     if (!ivars->txLock) {
         Log("tx lock allocation failed");
@@ -1350,30 +1379,6 @@ kern_return_t IMPL(RTL8127Driver, Start)
          */
     }
 
-    /*
-     * Media list: derived from the chip's max PHY speed so 2.5G (8125) and
-     * 5G (8126) parts don't advertise rates they can't reach. Fiber
-     * (8127ATF) exposes the forced 10G/1G SerDes modes.
-     */
-    ivars->mediaCount = 0;
-    ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernetAuto;
-    if (ivars->fiberMode) {
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseSR;
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet1000BaseSX;
-    } else {
-        UInt32 maxSpeed = tp->HwSuppMaxPhyLinkSpeed;
-
-        if (maxSpeed >= SPEED_10000)
-            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10GBaseT;
-        if (maxSpeed >= SPEED_5000)
-            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet5000BaseT;
-        if (maxSpeed >= SPEED_2500)
-            ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet2500BaseT;
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet1000BaseT;
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet100BaseTX;
-        ivars->mediaArray[ivars->mediaCount++] = kIOUserNetworkMediaEthernet10BaseT;
-    }
-    ivars->currentMedia = kIOUserNetworkMediaEthernetAuto;
 
     Log("started: datapath ready (TSO, jumbo up to %u), waiting for interface enable", kMaxMtu);
 
@@ -1618,6 +1623,11 @@ IOReturn RTL8127Driver::getSupportedMediaArray(MediaWord *mediaArray, uint32_t *
     return kIOReturnSuccess;
 }
 
+MediaWord RTL8127Driver::getInitialMedia()
+{
+    return kIOUserNetworkMediaEthernetAuto;
+}
+
 IOReturn RTL8127Driver::handleChosenMedia(MediaWord chosenMedia)
 {
     RTL8127Hw *hw = ivars->hw;
@@ -1679,16 +1689,13 @@ uint32_t RTL8127Driver::getMaxTransferUnit()
 
 uint32_t RTL8127Driver::getHardwareAssists()
 {
-    /*
-     * EXPERIMENT (0.2.13): advertise no TX offload at all. On this build
-     * user-space TCP flows (Network.framework) never reach the driver:
-     * the flowswitch copies them into the netif (fsw "copied pkt -> pkt")
-     * but the netif never performs the "TxCopySum" copy that Apple's own
-     * Wi-Fi dext (no TX offload) shows. If flows work with this build, the
-     * TX offload advertisement is what breaks the native path.
-     */
-    uint32_t assists = kIOUserNetworkHWAssistRxChecksum;
-    (void)ivars;
+    uint32_t assists = (kIOUserNetworkHWAssistTxChecksumIPHdr |
+                        kIOUserNetworkHWAssistTxChecksumTCP |
+                        kIOUserNetworkHWAssistTxChecksumUDP |
+                        kIOUserNetworkHWAssistRxChecksum);
+
+    if (ivars->tsoEnabled)
+        assists |= (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6);
     return assists;
 }
 
