@@ -93,7 +93,9 @@ struct RtlDextRxDesc {
 /* TX packets in flight are bounded by the pool, not the ring: 512 x 32 KB
  * (16 MB) covers many milliseconds at 10 Gbit/s and halves the TSO packet
  * rate compared to 16 KB buffers. */
-#define kTxPoolPackets  512
+#define kTxPoolPackets  kNumTxDesc  /* one packet per ring slot: with 512 the
+                                     * pool ran dry under 8 parallel TX streams
+                                     * (511 in flight, 4.5 Gbit/s) */
 #define kNumTxQueues    4       /* one TX queue per service class: BE, BK, VI, VO */
 #define kMacHdrLen      14
 #define kIPv6HdrLen     40
