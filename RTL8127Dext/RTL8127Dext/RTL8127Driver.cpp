@@ -214,7 +214,16 @@ bool RTL8127Driver::init()
     if (!ivars->hw)
         return false;
 
+    /*
+     * IONewZero() zero-fills the object without running its C++ default
+     * member initializers. Every RTL8127Hw member is fine at zero except
+     * the MTU: rtl812xInit() derives the chip's maximum receive size from
+     * it (mtu + VLAN header + FCS), and with mtu == 0 RxMaxSize ends up at
+     * 22 bytes -- the chip then rejects every frame. Seen on hardware as
+     * "rx pkts 0" with the runt/oversize tally climbing.
+     */
     ivars->mtu = 1500;
+    ivars->hw->mtu = ivars->mtu;
     ivars->tsoEnabled = true;
     return true;
 }
