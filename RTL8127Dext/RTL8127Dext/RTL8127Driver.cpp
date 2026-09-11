@@ -107,7 +107,7 @@ struct RtlDextRxDesc {
  * built for that. 256 x 32 KB = 8 MB, ~7 ms worst case, and still a few
  * hundred small frames for ACK-heavy receive traffic.
  */
-#define kTxInflightLimit 256
+#define kTxInflightLimit 64
 #define kMacHdrLen      14
 #define kIPv6HdrLen     40
 #define kTxDescLenMask  0xFFFF
