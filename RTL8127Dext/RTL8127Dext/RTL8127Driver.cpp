@@ -439,9 +439,29 @@ static bool describeTcpSyn(const uint8_t *f, uint32_t len, char *out, size_t out
     if (!(flags & 0x02)) return false;
     unsigned sport = (unsigned)(f[l4] << 8 | f[l4 + 1]);
     unsigned dport = (unsigned)(f[l4 + 2] << 8 | f[l4 + 3]);
-    if (sport != 80 && dport != 80 && sport != 443 && dport != 443)
+    if (sport != 80 && dport != 80)
         return false;
-    snprintf(out, outLen, "%s %u>%u flags 0x%02x len %u", v, sport, dport, flags, len);
+
+    /* Verify the TCP checksum as it sits in the frame: full (0), or only
+     * the pseudo-header seed (1), or something else (2). */
+    uint32_t l4len = len - l4;
+    uint32_t ph = 0;
+    if (et == 0x0800) {
+        for (int i = 0; i < 8; i += 2) ph += (uint32_t)(f[26 + i] << 8 | f[27 + i]);
+    } else {
+        for (int i = 0; i < 32; i += 2) ph += (uint32_t)(f[22 + i] << 8 | f[23 + i]);
+    }
+    ph += IPPROTO_TCP;
+    uint32_t sumFull = ph + l4len, sumSeed = ph;
+    const uint8_t *q = f + l4; uint32_t n = l4len;
+    uint16_t field = (uint16_t)(f[l4 + 16] << 8 | f[l4 + 17]);
+    while (n > 1) { sumFull += (uint32_t)(q[0] << 8 | q[1]); q += 2; n -= 2; }
+    if (n) sumFull += (uint32_t)(q[0] << 8);
+    while (sumFull >> 16) sumFull = (sumFull & 0xffff) + (sumFull >> 16);
+    while (sumSeed >> 16) sumSeed = (sumSeed & 0xffff) + (sumSeed >> 16);
+    int kind = ((uint16_t)sumFull == 0xffff || (uint16_t)sumFull == 0) ? 0 :
+               (field == (uint16_t)sumSeed || field == (uint16_t)(sumSeed + l4len)) ? 1 : 2;
+    snprintf(out, outLen, "%s %u>%u flags 0x%02x len %u csumfield 0x%04x kind %d", v, sport, dport, flags, len, field, kind);
     return true;
 }
 
@@ -555,7 +575,10 @@ static uint32_t txDequeueAction(OSObject *target,
             if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), len, d, sizeof(d))) {
                 iv->synLogged++;
                 uint32_t tf = pkt->getTxCsumFlags();
-                Log("tx SYN %{public}s csumflags 0x%x opts2 0x%08x dataoff %u", d, tf, opts2, pkt->getDataOffset());
+                IOUserNetworkPacketTxChecksumFlags cf = 0; uint16_t cs = 0, cst = 0;
+                pkt->getTxChecksumInfo(&cf, &cs, &cst);
+                Log("tx SYN %{public}s csumflags 0x%x info 0x%x start %u stuff %u tso 0x%x/%u opts2 0x%08x cmd 0x%08x dataoff %u",
+                    d, tf, cf, cs, cst, tso, mss, opts2, cmd, pkt->getDataOffset());
             }
         }
         if (iv->bpfMode & BPF_MODE_OUTPUT)
