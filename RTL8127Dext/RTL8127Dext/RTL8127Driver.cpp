@@ -52,7 +52,7 @@
 
 #include "RTL8127Driver.h"
 
-#define Log(fmt, ...) os_log(OS_LOG_DEFAULT, "RTL8127Dext: " fmt "\n", ##__VA_ARGS__)
+#define Log(fmt, ...) os_log(OS_LOG_DEFAULT, "RTL8127Dext: " fmt, ##__VA_ARGS__)
 
 /* Descriptors, identical to the kext layouts (USE_NEW_TX_DESC). */
 struct RtlDextTxDesc {
@@ -876,7 +876,7 @@ kern_return_t IMPL(RTL8127Driver, Start)
         fiberReg = 0;
         ivars->fiberMode = false;
     }
-    Log("chip mcfg %u, maxSpeed %u, MAC-OCP 0xD006=0x%04x -> %s", tp->mcfg,
+    Log("chip mcfg %u, maxSpeed %u, MAC-OCP 0xD006=0x%04x -> %{public}s", tp->mcfg,
         (unsigned int)tp->HwSuppMaxPhyLinkSpeed, fiberReg,
         ivars->fiberMode ? "RTL8127ATF fiber mode" : "copper/NIC mode");
     Log("MAC address %02x:%02x:%02x:%02x:%02x:%02x",
@@ -1264,7 +1264,7 @@ IOReturn RTL8127Driver::setHardwareAssists(uint32_t hardwareAssists, uint32_t ha
 {
     if (hardwareAssistsMask & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) {
         ivars->tsoEnabled = (hardwareAssists & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) != 0;
-        Log("TSO %s by the stack", ivars->tsoEnabled ? "enabled" : "disabled");
+        Log("TSO %{public}s by the stack", ivars->tsoEnabled ? "enabled" : "disabled");
     }
     return kIOReturnSuccess;
 }

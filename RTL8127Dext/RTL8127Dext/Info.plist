@@ -18,6 +18,15 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>OSBundleLibraries</key>
+	<dict>
+		<key>com.apple.iokit.IOSkywalkFamily</key>
+		<string>1.0</string>
+	</dict>
+	<key>OSBundleRequired</key>
+	<string>DriverKit</string>
+	<key>OSMinimumDriverKitVersion</key>
+	<string>24.0</string>
 	<key>OSBundleUsageDescription</key>
 	<string>Driver for Realtek RTL812x Ethernet controllers: RTL8125 (2.5GbE), RTL8126 (5GbE) and RTL8127 (10GbE, including the RTL8127ATF SFP+ fiber variant).</string>
 	<key>IOKitPersonalities</key>
@@ -26,8 +35,10 @@
 		<dict>
 			<key>CFBundleIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleIdentifierKernel</key>
+			<string>com.apple.iokit.IOSkywalkFamily</string>
 			<key>IOClass</key>
-			<string>IOUserService</string>
+			<string>IOUserNetworkEthernet</string>
 			<key>IOProviderClass</key>
 			<string>IOPCIDevice</string>
 			<key>IOUserClass</key>
