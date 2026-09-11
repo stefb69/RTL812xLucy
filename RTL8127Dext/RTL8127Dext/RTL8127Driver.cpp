@@ -161,6 +161,10 @@ struct RTL8127Driver_IVars {
     uint32_t txDebugLogged;
     uint32_t synLogged;
     uint32_t offLogged;
+    uint32_t oddLogged;
+    uint64_t txBadLen;
+    uint64_t txDequeueCalls[kNumTxQueues];
+    uint64_t txPerQueue[kNumTxQueues];
 
 
     /* Hardware tally block (chip-side counters), dumped every stats tick. */
@@ -439,7 +443,6 @@ static bool describeTcpSyn(const uint8_t *f, uint32_t len, char *out, size_t out
     else return false;
     if (len < l4 + 14) return false;
     uint8_t flags = f[l4 + 13];
-    if (!(flags & 0x02)) return false;
     unsigned sport = (unsigned)(f[l4] << 8 | f[l4 + 1]);
     unsigned dport = (unsigned)(f[l4 + 2] << 8 | f[l4 + 3]);
     if (sport != 80 && dport != 80)
@@ -507,6 +510,8 @@ static uint32_t txDequeueAction(OSObject *target,
         return 0;
 
     IOLockLock(iv->txLock);
+    iv->txDequeueCalls[qidx]++;
+    iv->txPerQueue[qidx] += packetCount;
     for (uint32_t i = 0; i < packetCount; i++) {
         IOUserNetworkPacket *pkt = packets[i];
         uint32_t len = pkt->getDataLength();
@@ -517,7 +522,20 @@ static uint32_t txDequeueAction(OSObject *target,
         if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= 2)
             break;
 
+        if (iv->oddLogged < 12) {
+            const uint8_t *va = (const uint8_t *)pkt->getDataVirtualAddress();
+            uint16_t et = (len >= 14 && va) ? (uint16_t)(va[12] << 8 | va[13]) : 0;
+            if (len < 54 || (et != 0x0800 && et != 0x86DD && et != 0x0806)) {
+                iv->oddLogged++;
+                Log("tx odd pkt: q %u len %u dataoff %u svc 0x%x ethertype 0x%04x head %02x%02x%02x%02x%02x%02x %02x%02x%02x%02x%02x%02x %02x%02x %02x%02x%02x%02x",
+                    qidx, len, pkt->getDataOffset(), pkt->getServiceClass(), et,
+                    va?va[0]:0, va?va[1]:0, va?va[2]:0, va?va[3]:0, va?va[4]:0, va?va[5]:0,
+                    va?va[6]:0, va?va[7]:0, va?va[8]:0, va?va[9]:0, va?va[10]:0, va?va[11]:0,
+                    va?va[12]:0, va?va[13]:0, va?va[14]:0, va?va[15]:0, va?va[16]:0, va?va[17]:0);
+            }
+        }
         if (len == 0 || len > kTxBufferSize) {
+            iv->txBadLen++;
             /* Cannot happen with our pool geometry; don't feed the chip. */
             pkt->setCompletionStatus(kIOReturnBadArgument);
             if (!fifoPush(&iv->txDoneFifo[qidx], pkt))
@@ -1035,6 +1053,9 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
                 iv->rxPkt[ri] ? "set" : "NULL");
         }
 
+        Log("txq: calls %llu/%llu/%llu/%llu pkts %llu/%llu/%llu/%llu badlen %llu",
+            iv->txDequeueCalls[0], iv->txDequeueCalls[1], iv->txDequeueCalls[2], iv->txDequeueCalls[3],
+            iv->txPerQueue[0], iv->txPerQueue[1], iv->txPerQueue[2], iv->txPerQueue[3], iv->txBadLen);
         Log("stats: link %u tx sub %llu done %llu tso %llu partial %llu/%llu bytes %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
             iv->linkUp, iv->txSubmitted, iv->txCompleted, iv->txTso, iv->txPartial, iv->txPartialFail, iv->txBytes,
             __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
