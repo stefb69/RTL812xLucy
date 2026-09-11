@@ -23,6 +23,16 @@
 
 #define ENABLE_TX_NO_CLOSE
 
+/*
+ * 32-byte TX descriptors, as the kext prefix header enables and as the
+ * RTL8127 requires (r8127 sets 0xEB58 BIT_0 unconditionally). The dext
+ * writes RtlDextTxDesc in that layout; without this define the hardware
+ * layer configures the chip for 16-byte descriptors, it consumes the first
+ * descriptor and then reads the next one at the wrong offset (DescOwn
+ * clear) and stalls -- observed on hardware as "tx done 1, hwclo 1".
+ */
+#define USE_NEW_TX_DESC
+
 /* Neutralise the kext-only class header included by rtl812xx.cpp. */
 #define RTL812xEthernet_hpp
 
