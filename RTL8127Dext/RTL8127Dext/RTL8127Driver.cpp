@@ -85,10 +85,13 @@ struct RtlDextRxDesc {
  */
 #define kMaxMtu         9000
 #define kRxBufferSize   9216
-#define kTxBufferSize   16384
+#define kTxBufferSize   32768
 #define kTsoMaxPacket   (kTxBufferSize - 256)
 #define kRxPoolPackets  (kNumRxDesc + 512)
-#define kTxPoolPackets  (kNumTxDesc + 256)
+/* TX packets in flight are bounded by the pool, not the ring: 512 x 32 KB
+ * (16 MB) covers many milliseconds at 10 Gbit/s and halves the TSO packet
+ * rate compared to 16 KB buffers. */
+#define kTxPoolPackets  512
 #define kMacHdrLen      14
 #define kIPv6HdrLen     40
 #define kTxDescLenMask  0xFFFF
@@ -149,7 +152,7 @@ struct RTL8127Driver_IVars {
     OSAction *statsAction;
 
     /* Datapath counters, logged every 5 s while the interface is enabled. */
-    uint64_t txSubmitted, txCompleted, txDroppedFifo;
+    uint64_t txSubmitted, txCompleted, txDroppedFifo, txBytes, txTso, txPartial, txPartialFail;
     uint64_t rxDelivered, rxErrors, rxDroppedFifo, rxRefillShort;
     uint64_t isrCount, isrRx, isrTx, isrTimer, isrLink;
     uint32_t lastIsrStatus;
@@ -350,6 +353,71 @@ static uint32_t prepareTSO6(uint8_t *frame)
     return kMacHdrLen + kIPv6HdrLen;
 }
 
+/*
+ * Partial checksum (kIOUserNetworkPacketTxCsumPartial): the stack asks for a
+ * one's-complement sum of the bytes from `start` to the end of the frame,
+ * stored at `stuff`, with the pseudo-header sum already seeded in place.
+ * That is exactly what Apple's user-space TCP (libusrtcp, used by every
+ * Network.framework client, from the code-signing timestamp service to
+ * Safari) requests. For TCP and UDP over IPv4/IPv6 the chip's checksum
+ * engine produces the same result, so map it to the hardware bits and
+ * return true; anything else gets the sum computed here.
+ */
+static bool txPartialChecksum(IOUserNetworkPacket *pkt, uint32_t len,
+                              uint16_t start, uint16_t stuff, uint32_t *opts2)
+{
+    uint8_t *frame = (uint8_t *)pkt->getDataVirtualAddress();
+    if (!frame || len < kMacHdrLen + 20)
+        return false;
+
+    uint16_t etherType = (uint16_t)(frame[12] << 8 | frame[13]);
+    uint8_t proto = 0;
+    uint32_t l4off = 0;
+
+    if (etherType == 0x0800) {
+        uint32_t ihl = (uint32_t)(frame[kMacHdrLen] & 0x0f) << 2;
+        proto = frame[kMacHdrLen + 9];
+        l4off = kMacHdrLen + ihl;
+        if (proto == IPPROTO_TCP && stuff == l4off + 16) {
+            *opts2 = (TxIPCS_C | TxTCPCS_C);
+            return true;
+        }
+        if (proto == IPPROTO_UDP && stuff == l4off + 6) {
+            *opts2 = (TxIPCS_C | TxUDPCS_C);
+            return true;
+        }
+    } else if (etherType == 0x86DD) {
+        proto = frame[kMacHdrLen + 6];
+        l4off = kMacHdrLen + kIPv6HdrLen;
+        if (proto == IPPROTO_TCP && stuff == l4off + 16) {
+            *opts2 = (TxTCPCS_C | TxIPV6F_C | ((l4off & TCPHO_MAX) << TCPHO_SHIFT));
+            return true;
+        }
+        if (proto == IPPROTO_UDP && stuff == l4off + 6) {
+            *opts2 = (TxUDPCS_C | TxIPV6F_C | ((l4off & TCPHO_MAX) << TCPHO_SHIFT));
+            return true;
+        }
+    }
+
+    /* Software fallback: finish the sum the stack started. */
+    if (start >= len || stuff + 2 > len)
+        return false;
+    uint32_t sum = 0;
+    const uint8_t *p = frame + start;
+    uint32_t n = len - start;
+    while (n > 1) { sum += (uint32_t)(p[0] << 8 | p[1]); p += 2; n -= 2; }
+    if (n) sum += (uint32_t)(p[0] << 8);
+    /* fold in the seed already at `stuff` (it was included in the sum above,
+     * which is what the stack expects: it seeds the field, we sum over it) */
+    while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+    uint16_t csum = (uint16_t)~sum;
+    if (csum == 0 && proto == IPPROTO_UDP) csum = 0xffff;
+    frame[stuff] = (uint8_t)(csum >> 8);
+    frame[stuff + 1] = (uint8_t)csum;
+    *opts2 = 0;
+    return true;
+}
+
 #pragma mark - NDK queue actions
 
 /*
@@ -424,7 +492,11 @@ static uint32_t txDequeueAction(OSObject *target,
             uint16_t start = 0, stuff = 0;
             pkt->getTxChecksumInfo(&csum, &start, &stuff);
 
-            if ((csum & kIOUserNetworkPacketTxCsumTCPIPV4) || (tso & kIOUserNetworkPacketTSOIPV4))
+            if (csum & kIOUserNetworkPacketTxCsumPartial) {
+                iv->txPartial++;
+                if (!txPartialChecksum(pkt, len, start, stuff, &opts2))
+                    iv->txPartialFail++;
+            } else if ((csum & kIOUserNetworkPacketTxCsumTCPIPV4) || (tso & kIOUserNetworkPacketTSOIPV4))
                 opts2 = (TxIPCS_C | TxTCPCS_C);
             else if (csum & kIOUserNetworkPacketTxCsumUDPIPV4)
                 opts2 = (TxIPCS_C | TxUDPCS_C);
@@ -449,6 +521,8 @@ static uint32_t txDequeueAction(OSObject *target,
         desc->opts1 = OSSwapHostToLittleInt32(opts1 | DescOwn);
 
         iv->txSubmitted++;
+        iv->txBytes += len;
+        if (cmd) iv->txTso++;
         if (iv->txDebugLogged < 4) {
             iv->txDebugLogged++;
             Log("tx#%llu idx %u len %u opts1 0x%08x opts2 0x%08x iova 0x%llx tail %u",
@@ -852,8 +926,8 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
                 iv->rxPkt[ri] ? "set" : "NULL");
         }
 
-        Log("stats: link %u tx sub %llu done %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
-            iv->linkUp, iv->txSubmitted, iv->txCompleted,
+        Log("stats: link %u tx sub %llu done %llu tso %llu partial %llu/%llu bytes %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
+            iv->linkUp, iv->txSubmitted, iv->txCompleted, iv->txTso, iv->txPartial, iv->txPartialFail, iv->txBytes,
             __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
             hw->rtl812xGetHwCloPtr(tp),
             iv->rxDelivered, iv->rxErrors, iv->rxRefillShort,
@@ -1092,9 +1166,9 @@ kern_return_t IMPL(RTL8127Driver, Start)
     }
 
     ivars->txSubQueue = IOUserNetworkTxSubmissionQueue::withPool(ivars->txPool,
-        kNumTxDesc, 0, this, txQueryFreeSpace, txDequeueAction);
+        kTxPoolPackets, 0, this, txQueryFreeSpace, txDequeueAction);
     ivars->txCompQueue = IOUserNetworkTxCompletionQueue::withPool(ivars->txPool,
-        kNumTxDesc, 0, this, txEnqueueAction);
+        kTxPoolPackets, 0, this, txEnqueueAction);
     ivars->rxSubQueue = IOUserNetworkRxSubmissionQueue::withPool(ivars->rxPool,
         kNumRxDesc, kNumRxDesc, 1, this, rxDequeueAction);
     ivars->rxCompQueue = IOUserNetworkRxCompletionQueue::withPool(ivars->rxPool,
