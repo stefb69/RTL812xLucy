@@ -19,6 +19,7 @@
 
 #include <os/log.h>
 #include <time.h>
+#include <stdio.h>
 
 #include <DriverKit/IOLib.h>
 #include <DriverKit/IOService.h>
@@ -157,6 +158,7 @@ struct RTL8127Driver_IVars {
     uint64_t isrCount, isrRx, isrTx, isrTimer, isrLink;
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
+    uint32_t synLogged;
 
     /* Hardware tally block (chip-side counters), dumped every stats tick. */
     volatile RtlStatData *statData;
@@ -418,6 +420,23 @@ static bool txPartialChecksum(IOUserNetworkPacket *pkt, uint32_t len,
     return true;
 }
 
+/* Beta diagnostics: describe a TCP SYN/SYN-ACK frame (returns false if not one). */
+static bool describeTcpSyn(const uint8_t *f, uint32_t len, char *out, size_t outLen)
+{
+    if (!f || len < 54) return false;
+    uint16_t et = (uint16_t)(f[12] << 8 | f[13]);
+    uint32_t l4; const char *v;
+    if (et == 0x0800 && f[23] == 6) { l4 = 14 + ((f[14] & 0x0f) << 2); v = "v4"; }
+    else if (et == 0x86DD && f[20] == 6) { l4 = 54; v = "v6"; }
+    else return false;
+    if (len < l4 + 14) return false;
+    uint8_t flags = f[l4 + 13];
+    if (!(flags & 0x02)) return false;
+    snprintf(out, outLen, "%s %u>%u flags 0x%02x len %u", v,
+             (unsigned)(f[l4] << 8 | f[l4 + 1]), (unsigned)(f[l4 + 2] << 8 | f[l4 + 3]), flags, len);
+    return true;
+}
+
 #pragma mark - NDK queue actions
 
 /*
@@ -523,6 +542,14 @@ static uint32_t txDequeueAction(OSObject *target,
         iv->txSubmitted++;
         iv->txBytes += len;
         if (cmd) iv->txTso++;
+        if (iv->synLogged < 24) {
+            char d[96];
+            if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), len, d, sizeof(d))) {
+                iv->synLogged++;
+                uint32_t tf = pkt->getTxCsumFlags();
+                Log("tx SYN %{public}s csumflags 0x%x opts2 0x%08x", d, tf, opts2);
+            }
+        }
         if (iv->txDebugLogged < 4) {
             iv->txDebugLogged++;
             Log("tx#%llu idx %u len %u opts1 0x%08x opts2 0x%08x iova 0x%llx tail %u",
@@ -745,6 +772,13 @@ static void rxRingService(RTL8127Driver *driver)
                 pkt->setRxChecksumInfo(csum, 0xffff);
 
             iv->rxDelivered++;
+            if (iv->synLogged < 24) {
+                char d[96];
+                if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), (uint32_t)length, d, sizeof(d))) {
+                    iv->synLogged++;
+                    Log("rx SYN %{public}s opts2 0x%08x", d, opts2);
+                }
+            }
             if (!fifoPush(&iv->rxDoneFifo, pkt)) {
                 iv->rxDroppedFifo++;
                 if (!iv->rxDropWarned) {
@@ -1385,6 +1419,49 @@ IOReturn RTL8127Driver::setAllMulticastModeEnable(bool enable)
     return kIOReturnSuccess;
 }
 
+/*
+ * Multicast list from the stack (the modern NDK entry point; the RPC
+ * variant below is the deprecated one). Without this override the default
+ * implementation rejects the request and the interface never joins any
+ * link-layer multicast group: no mDNS, no IPv6 solicited-node groups, so
+ * nobody on the LAN can resolve our IPv6 addresses. Program the 64-bit
+ * hash filter the way the kext's setMulticastList() does.
+ */
+static uint32_t etherCrc(const uint8_t *data, int length)
+{
+    uint32_t crc = 0xffffffff;
+    while (--length >= 0) {
+        uint8_t octet = *data++;
+        for (int bit = 0; bit < 8; bit++, octet >>= 1)
+            crc = (crc << 1) ^ ((((int32_t)crc < 0) ^ (octet & 1)) ? 0x04c11db7U : 0);
+    }
+    return crc;
+}
+
+IOReturn RTL8127Driver::setMulticastAddresses(const ether_addr_t *addresses, uint32_t count)
+{
+    RTL8127Hw *hw = ivars->hw;
+    uint64_t filter = 0;
+
+    if (count > 32 || !addresses) {
+        filter = 0xffffffffffffffffULL;
+    } else {
+        for (uint32_t i = 0; i < count; i++) {
+            uint32_t bit = etherCrc(addresses[i].octet, 6) >> 26;
+            filter |= (1ULL << (bit & 0x3f));
+        }
+        filter = OSSwapInt64(filter);
+    }
+    hw->multicastFilter = filter;
+    if (count)
+        set_bit(__M_CAST, &hw->stateFlags);
+    else
+        clear_bit(__M_CAST, &hw->stateFlags);
+    hw->applyRxMode();
+    Log("multicast list: %u addresses, filter 0x%016llx", count, filter);
+    return kIOReturnSuccess;
+}
+
 IOReturn RTL8127Driver::getSupportedMediaArray(MediaWord *mediaArray, uint32_t *mediaCount)
 {
     if (!mediaCount)
@@ -1515,11 +1592,7 @@ kern_return_t IMPL(RTL8127Driver, SetPromiscuousModeEnable)
 
 kern_return_t IMPL(RTL8127Driver, SetMulticastAddresses)
 {
-    /* Hash filtering: accept-all-multicast keeps semantics safe. */
-    ivars->hw->multicastFilter = 0xffffffffffffffffULL;
-    set_bit(__M_CAST, &ivars->hw->stateFlags);
-    ivars->hw->applyRxMode();
-    return kIOReturnSuccess;
+    return setMulticastAddresses((const ether_addr_t *)addresses, count);
 }
 
 kern_return_t IMPL(RTL8127Driver, SetAllMulticastModeEnable)
