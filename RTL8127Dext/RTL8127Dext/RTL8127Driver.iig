@@ -59,7 +59,6 @@ public:
     virtual IOReturn setAllMulticastModeEnable(bool enable) override LOCALONLY;
     virtual IOReturn setMulticastAddresses(const ether_addr_t *addresses,
                                            uint32_t count) override LOCALONLY;
-    virtual int bpfTap(uint32_t dataLinkType, uint32_t mode) override LOCALONLY;
     virtual IOReturn getSupportedMediaArray(MediaWord *mediaArray,
                                             uint32_t *mediaCount) override LOCALONLY;
     virtual IOReturn handleChosenMedia(MediaWord chosenMedia) override LOCALONLY;

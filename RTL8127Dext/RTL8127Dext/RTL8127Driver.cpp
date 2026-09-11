@@ -44,7 +44,6 @@
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
-#include <net/bpf.h>
 
 /*
  * rtl812xx.h's LinkStatus enumerator collides with the NDK LinkStatus
@@ -161,9 +160,6 @@ struct RTL8127Driver_IVars {
     uint32_t txDebugLogged;
     uint32_t synLogged;
 
-    /* BPF tap state (tcpdump on this interface): bpfTap() tells us which
-     * directions have listeners; the NDK expects the driver to tap itself. */
-    uint32_t bpfMode;
 
     /* Hardware tally block (chip-side counters), dumped every stats tick. */
     volatile RtlStatData *statData;
@@ -581,8 +577,7 @@ static uint32_t txDequeueAction(OSObject *target,
                     d, tf, cf, cs, cst, tso, mss, opts2, cmd, pkt->getDataOffset());
             }
         }
-        if (iv->bpfMode & BPF_MODE_OUTPUT)
-            driver->bpfTapOutputPacket(DLT_EN10MB, pkt, nullptr, 0);
+
         if (iv->txDebugLogged < 4) {
             iv->txDebugLogged++;
             Log("tx#%llu idx %u len %u opts1 0x%08x opts2 0x%08x iova 0x%llx tail %u",
@@ -812,8 +807,7 @@ static void rxRingService(RTL8127Driver *driver)
                     Log("rx SYN %{public}s opts2 0x%08x", d, opts2);
                 }
             }
-            if (iv->bpfMode & BPF_MODE_INPUT)
-                driver->bpfTapInputPacket(DLT_EN10MB, pkt, nullptr, 0);
+
             if (!fifoPush(&iv->rxDoneFifo, pkt)) {
                 iv->rxDroppedFifo++;
                 if (!iv->rxDropWarned) {
@@ -1262,9 +1256,14 @@ kern_return_t IMPL(RTL8127Driver, Start)
             Log("registerEthernetInterface failed: 0x%x", ret);
             goto fail;
         }
-        ret = bpfAttach(DLT_EN10MB, kMacHdrLen);
-        if (ret != kIOReturnSuccess)
-            Log("bpfAttach failed: 0x%x (tcpdump will not see this interface)", ret);
+        /*
+         * No bpfAttach(): on macOS 26.6 it panicked the kernel inside
+         * IOSkywalkFamily (null dereference) when the previous instance of
+         * this driver was replaced while tcpdump was attached to the
+         * interface (panic-full-2026-09-12-000508). tcpdump therefore only
+         * sees the frames the kernel's own host path produces on this
+         * interface until Apple fixes that path.
+         */
     }
 
     /*
@@ -1311,16 +1310,24 @@ kern_return_t IMPL(RTL8127Driver, Stop)
     RTL8127Driver_IVars *iv = ivars;
 
     if (iv) {
+        /*
+         * Dispatch sources must stay alive until their Cancel completion
+         * runs on the queue; releasing them right after Cancel() crashed the
+         * teardown in Cancel_Impl's block (crash reports from the upgrade
+         * path). Hand the release to the completion block instead.
+         */
         if (iv->statsTimer) {
-            iv->statsTimer->SetEnable(false);
-            iv->statsTimer->Cancel(^{});
-            OSSafeReleaseNULL(iv->statsTimer);
+            IOTimerDispatchSource *t = iv->statsTimer;
+            iv->statsTimer = nullptr;
+            t->SetEnable(false);
+            t->Cancel(^{ t->release(); });
         }
         OSSafeReleaseNULL(iv->statsAction);
         if (iv->intSource) {
-            iv->intSource->SetEnable(false);
-            iv->intSource->Cancel(^{});
-            OSSafeReleaseNULL(iv->intSource);
+            IOInterruptDispatchSource *src = iv->intSource;
+            iv->intSource = nullptr;
+            src->SetEnable(false);
+            src->Cancel(^{ src->release(); });
         }
         OSSafeReleaseNULL(iv->intAction);
 
@@ -1497,15 +1504,6 @@ IOReturn RTL8127Driver::setMulticastAddresses(const ether_addr_t *addresses, uin
         clear_bit(__M_CAST, &hw->stateFlags);
     hw->applyRxMode();
     Log("multicast list: %u addresses, filter 0x%016llx", count, filter);
-    return kIOReturnSuccess;
-}
-
-int RTL8127Driver::bpfTap(uint32_t dataLinkType, uint32_t mode)
-{
-    if (dataLinkType != DLT_EN10MB)
-        return kIOReturnUnsupported;
-    ivars->bpfMode = mode;
-    Log("bpf tap mode %u", mode);
     return kIOReturnSuccess;
 }
 
