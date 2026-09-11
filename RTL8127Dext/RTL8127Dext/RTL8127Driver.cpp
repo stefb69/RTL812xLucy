@@ -159,6 +159,7 @@ struct RTL8127Driver_IVars {
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
     uint32_t synLogged;
+    uint32_t offLogged;
 
 
     /* Hardware tally block (chip-side counters), dumped every stats tick. */
@@ -566,6 +567,17 @@ static uint32_t txDequeueAction(OSObject *target,
         iv->txSubmitted++;
         iv->txBytes += len;
         if (cmd) iv->txTso++;
+        {
+            uint16_t doff = pkt->getDataOffset();
+            uint64_t moff = pkt->getMemorySegmentOffset();
+            const uint8_t *va = (const uint8_t *)pkt->getDataVirtualAddress();
+            if ((doff != 0 || moff != 0) && iv->offLogged < 12) {
+                iv->offLogged++;
+                Log("tx pkt with offsets: dataoff %u memseg %llu len %u va-ethertype %02x%02x va+doff-ethertype %02x%02x iova 0x%llx",
+                    doff, moff, len, va ? va[12] : 0, va ? va[13] : 0,
+                    va ? va[doff + 12] : 0, va ? va[doff + 13] : 0, iova);
+            }
+        }
         if (iv->synLogged < 100) {
             char d[96];
             if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), len, d, sizeof(d))) {
