@@ -152,3 +152,30 @@ far with Apple's dexts, whose interfaces show `media: autoselect` and
 4. Anything in the pool geometry (32 KB buffers, 512 packets, single buffer
    per packet, explicit map flags) known to break the native TX path while the
    mbuf copy path keeps working?
+
+## Addendum, 2026-09-12 01:45 CEST (after build 0.2.16)
+
+- The media-list fix changed nothing: our `IOSkywalkLegacyEthernet` node still
+  shows `IOLinkSpeed 0`, empty `IOActiveMedium`; but so does Apple's Wi-Fi
+  node (en0), so those properties are not the discriminator. Hypothesis
+  withdrawn.
+- `kern.skywalk.netif.netif_queue_stat_enable = 0`: the netif queue counters
+  quoted above are disabled system-wide, their zeros mean nothing.
+- Nexus provider parameters at creation (`nxprov_params_adjust` in the kernel
+  log), for every netif since boot: ours is **identical** to Apple's dexts
+  (`AppleBCMWLANSkywalkInterface.en0`, `AppleUserECM.en7`): `flags 0x6, req 0x0,
+  rings 2/2/0/0/0, slots 2/2/0/0/0, buf 2048, nexusadv_size 112, capabs 0x4,
+  max_frags 1, large_buf 0`.
+- The **only difference found anywhere** is on the flowswitch nexus attached to
+  the interface: `com.apple.flowswitch.en10` has `large_buf 32512` (build with
+  `getTSOOptions()` tso_mtu = 32512) or `32768` (build with TSO off, TX pool
+  buffers 32768), whereas every Apple interface (en0, en7, awdl0) has
+  `large_buf 16384`, which is exactly `kern.skywalk.flowswitch.gso_mtu = 16384`
+  (en4/5/6 show 16000). Before build 0.2.7 our TX buffers were 16 KB with
+  tso_mtu 16128, i.e. `large_buf` was presumably 16128, and user flows failed
+  then too. So the candidate is "large_buf must equal gso_mtu (16384)", i.e.
+  TX pool buffer size and TSO mtu both 16384, not "smaller or larger than".
+  Untested (waiting for the review).
+- Since 0.2.16 the driver does see port-80 frames of *kernel* flows (ACK/FIN of
+  a BSD-socket HTTP connection), confirming the port-80 logger works; still no
+  user-flow SYN reaches it.
