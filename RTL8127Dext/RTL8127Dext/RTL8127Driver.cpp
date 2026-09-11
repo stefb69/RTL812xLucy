@@ -44,6 +44,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
+#include <net/bpf.h>
 
 /*
  * rtl812xx.h's LinkStatus enumerator collides with the NDK LinkStatus
@@ -159,6 +160,10 @@ struct RTL8127Driver_IVars {
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
     uint32_t synLogged;
+
+    /* BPF tap state (tcpdump on this interface): bpfTap() tells us which
+     * directions have listeners; the NDK expects the driver to tap itself. */
+    uint32_t bpfMode;
 
     /* Hardware tally block (chip-side counters), dumped every stats tick. */
     volatile RtlStatData *statData;
@@ -432,8 +437,11 @@ static bool describeTcpSyn(const uint8_t *f, uint32_t len, char *out, size_t out
     if (len < l4 + 14) return false;
     uint8_t flags = f[l4 + 13];
     if (!(flags & 0x02)) return false;
-    snprintf(out, outLen, "%s %u>%u flags 0x%02x len %u", v,
-             (unsigned)(f[l4] << 8 | f[l4 + 1]), (unsigned)(f[l4 + 2] << 8 | f[l4 + 3]), flags, len);
+    unsigned sport = (unsigned)(f[l4] << 8 | f[l4 + 1]);
+    unsigned dport = (unsigned)(f[l4 + 2] << 8 | f[l4 + 3]);
+    if (sport != 80 && dport != 80 && sport != 443 && dport != 443)
+        return false;
+    snprintf(out, outLen, "%s %u>%u flags 0x%02x len %u", v, sport, dport, flags, len);
     return true;
 }
 
@@ -542,14 +550,16 @@ static uint32_t txDequeueAction(OSObject *target,
         iv->txSubmitted++;
         iv->txBytes += len;
         if (cmd) iv->txTso++;
-        if (iv->synLogged < 24) {
+        if (iv->synLogged < 100) {
             char d[96];
             if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), len, d, sizeof(d))) {
                 iv->synLogged++;
                 uint32_t tf = pkt->getTxCsumFlags();
-                Log("tx SYN %{public}s csumflags 0x%x opts2 0x%08x", d, tf, opts2);
+                Log("tx SYN %{public}s csumflags 0x%x opts2 0x%08x dataoff %u", d, tf, opts2, pkt->getDataOffset());
             }
         }
+        if (iv->bpfMode & BPF_MODE_OUTPUT)
+            driver->bpfTapOutputPacket(DLT_EN10MB, pkt, nullptr, 0);
         if (iv->txDebugLogged < 4) {
             iv->txDebugLogged++;
             Log("tx#%llu idx %u len %u opts1 0x%08x opts2 0x%08x iova 0x%llx tail %u",
@@ -772,13 +782,15 @@ static void rxRingService(RTL8127Driver *driver)
                 pkt->setRxChecksumInfo(csum, 0xffff);
 
             iv->rxDelivered++;
-            if (iv->synLogged < 24) {
+            if (iv->synLogged < 100) {
                 char d[96];
                 if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), (uint32_t)length, d, sizeof(d))) {
                     iv->synLogged++;
                     Log("rx SYN %{public}s opts2 0x%08x", d, opts2);
                 }
             }
+            if (iv->bpfMode & BPF_MODE_INPUT)
+                driver->bpfTapInputPacket(DLT_EN10MB, pkt, nullptr, 0);
             if (!fifoPush(&iv->rxDoneFifo, pkt)) {
                 iv->rxDroppedFifo++;
                 if (!iv->rxDropWarned) {
@@ -1227,6 +1239,9 @@ kern_return_t IMPL(RTL8127Driver, Start)
             Log("registerEthernetInterface failed: 0x%x", ret);
             goto fail;
         }
+        ret = bpfAttach(DLT_EN10MB, kMacHdrLen);
+        if (ret != kIOReturnSuccess)
+            Log("bpfAttach failed: 0x%x (tcpdump will not see this interface)", ret);
     }
 
     /*
@@ -1459,6 +1474,15 @@ IOReturn RTL8127Driver::setMulticastAddresses(const ether_addr_t *addresses, uin
         clear_bit(__M_CAST, &hw->stateFlags);
     hw->applyRxMode();
     Log("multicast list: %u addresses, filter 0x%016llx", count, filter);
+    return kIOReturnSuccess;
+}
+
+int RTL8127Driver::bpfTap(uint32_t dataLinkType, uint32_t mode)
+{
+    if (dataLinkType != DLT_EN10MB)
+        return kIOReturnUnsupported;
+    ivars->bpfMode = mode;
+    Log("bpf tap mode %u", mode);
     return kIOReturnSuccess;
 }
 
