@@ -50,6 +50,10 @@ cat > "$SCRIPTS/postinstall" <<'POST'
 #!/bin/bash
 user="$(stat -f %Su /dev/console 2>/dev/null)"
 if [ -n "$user" ] && [ "$user" != "root" ]; then
+    # A running copy of the previous app would just come to front on
+    # "open" and never submit the new driver: quit it first.
+    sudo -u "$user" osascript -e 'tell application "RTL8127App" to quit' >/dev/null 2>&1 || true
+    sleep 1
     sudo -u "$user" open "/Applications/RTL8127App.app" || true
 fi
 exit 0

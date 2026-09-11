@@ -14,6 +14,7 @@
 #include <Availability.h>
 #include <DriverKit/IOService.iig>
 #include <DriverKit/IOInterruptDispatchSource.iig>
+#include <DriverKit/IOTimerDispatchSource.iig>
 #include <NetworkingDriverKit/IOUserNetworkEthernet.iig>
 
 class RTL8127Driver : public IOUserNetworkEthernet
@@ -29,6 +30,10 @@ public:
     virtual void InterruptOccurred(OSAction *action,
                                    uint64_t count,
                                    uint64_t time) TYPE(IOInterruptDispatchSource::InterruptOccurred);
+
+    /* Periodic datapath statistics (beta diagnostics). */
+    virtual void StatsTimerOccurred(OSAction *action,
+                                    uint64_t time) TYPE(IOTimerDispatchSource::TimerOccurred);
 
     /*
      * Abstract RPC interface of IOUserNetworkEthernet. The non-deprecated

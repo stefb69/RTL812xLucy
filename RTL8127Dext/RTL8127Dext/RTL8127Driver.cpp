@@ -18,11 +18,13 @@
  */
 
 #include <os/log.h>
+#include <time.h>
 
 #include <DriverKit/IOLib.h>
 #include <DriverKit/IOService.h>
 #include <DriverKit/IODispatchQueue.h>
 #include <DriverKit/IOInterruptDispatchSource.h>
+#include <DriverKit/IOTimerDispatchSource.h>
 #include <DriverKit/IOBufferMemoryDescriptor.h>
 #include <DriverKit/IOMemoryMap.h>
 #include <DriverKit/IODMACommand.h>
@@ -143,6 +145,15 @@ struct RTL8127Driver_IVars {
     IODispatchQueue *workQueue;
     IOInterruptDispatchSource *intSource;
     OSAction *intAction;
+    IOTimerDispatchSource *statsTimer;
+    OSAction *statsAction;
+
+    /* Datapath counters, logged every 5 s while the interface is enabled. */
+    uint64_t txSubmitted, txCompleted, txDroppedFifo;
+    uint64_t rxDelivered, rxErrors, rxDroppedFifo, rxRefillShort;
+    uint64_t isrCount, isrRx, isrTx, isrTimer, isrLink;
+    uint32_t lastIsrStatus;
+    uint32_t txDebugLogged;
 
     /* Descriptor rings and stats block. */
     IOBufferMemoryDescriptor *txRingMd;
@@ -424,6 +435,13 @@ static uint32_t txDequeueAction(OSObject *target,
         desc->opts2 = OSSwapHostToLittleInt32(opts2);
         desc->opts1 = OSSwapHostToLittleInt32(opts1 | DescOwn);
 
+        iv->txSubmitted++;
+        if (iv->txDebugLogged < 4) {
+            iv->txDebugLogged++;
+            Log("tx#%llu idx %u len %u opts1 0x%08x opts2 0x%08x iova 0x%llx tail %u",
+                iv->txSubmitted, index, len, opts1 | DescOwn, opts2, iova, hw->txTailPtr0 + 1);
+        }
+
         hw->txNextDescIndex = (index + 1) & kTxDescMask;
         hw->txTailPtr0++;
         OSAddAtomic(-1, &hw->txNumFreeDesc);
@@ -568,7 +586,9 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
         iv->txPkt[index] = nullptr;
         if (pkt) {
             pkt->setCompletionStatus(abort ? kIOReturnAborted : kIOReturnSuccess);
+            iv->txCompleted++;
             if (!fifoPush(&iv->txDoneFifo, pkt)) {
+                iv->txDroppedFifo++;
                 if (!iv->txDropWarned) {
                     iv->txDropWarned = true;
                     Log("tx completion FIFO full - dropping completions (framework thread behind)");
@@ -612,6 +632,7 @@ static void rxRingService(RTL8127Driver *driver)
         if ((status & RxRES) || length <= 0 ||
             !(status & FirstFrag) || !(status & LastFrag)) {
             /* Error or fragmented jumbo: recycle the buffer in place. */
+            iv->rxErrors++;
             uint64_t word1 = (kRxBufferSize | DescOwn);
             if (index == kRxLastDesc)
                 word1 |= RingEnd;
@@ -636,7 +657,9 @@ static void rxRingService(RTL8127Driver *driver)
             if (csum)
                 pkt->setRxChecksumInfo(csum, 0xffff);
 
+            iv->rxDelivered++;
             if (!fifoPush(&iv->rxDoneFifo, pkt)) {
+                iv->rxDroppedFifo++;
                 if (!iv->rxDropWarned) {
                     iv->rxDropWarned = true;
                     Log("rx FIFO full - dropping packets (framework thread behind)");
@@ -648,7 +671,8 @@ static void rxRingService(RTL8127Driver *driver)
         hw->rxNextDescIndex = (index + 1) & kRxDescMask;
     }
 
-    rxRingRefill(iv);
+    if (!rxRingRefill(iv))
+        iv->rxRefillShort++;
 
     if (delivered && iv->rxCompQueue) {
         iv->rxCompQueue->requestEnqueue();
@@ -695,6 +719,13 @@ static void updateLinkStatus(RTL8127Driver *driver)
             iv->currentMedia = media;
             driver->reportLinkStatus(kIOUserNetworkLinkStatusActive, media);
             Log("link up, media 0x%08x", media);
+
+            /* Packets refused while the link was down are still queued in
+             * the framework: ask for them now, and for fresh rx buffers. */
+            if (iv->txSubQueue)
+                iv->txSubQueue->requestDequeue();
+            if (iv->rxSubQueue)
+                iv->rxSubQueue->requestDequeue();
         }
     } else if (iv->linkUp) {
         iv->linkUp = false;
@@ -731,6 +762,13 @@ void IMPL(RTL8127Driver, InterruptOccurred)
     RTL_W32(tp, IMR0_8125, 0x0000);
     RTL_W32(tp, ISR0_8125, (status & ~RxFIFOOver));
 
+    iv->isrCount++;
+    iv->lastIsrStatus = status;
+    if (status & (RxOK | RxDescUnavail)) iv->isrRx++;
+    if (status & TxOK) iv->isrTx++;
+    if (status & PCSTimeout) iv->isrTimer++;
+    if (status & LinkChg) iv->isrLink++;
+
     if (iv->interfaceEnabled) {
         if (status & (RxOK | RxDescUnavail))
             rxRingService(this);
@@ -760,6 +798,25 @@ void IMPL(RTL8127Driver, InterruptOccurred)
     }
 
     RTL_W32(tp, IMR0_8125, hw->intrMask);
+}
+
+void IMPL(RTL8127Driver, StatsTimerOccurred)
+{
+    RTL8127Driver_IVars *iv = ivars;
+    RTL8127Hw *hw = iv->hw;
+    struct rtl8125_private *tp = &hw->linuxData;
+
+    if (iv->interfaceEnabled) {
+        Log("stats: link %u tx sub %llu done %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
+            iv->linkUp, iv->txSubmitted, iv->txCompleted,
+            __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
+            hw->rtl812xGetHwCloPtr(tp),
+            iv->rxDelivered, iv->rxErrors, iv->rxRefillShort,
+            iv->isrCount, iv->isrRx, iv->isrTx, iv->isrTimer, iv->isrLink, iv->lastIsrStatus,
+            RTL_R32(tp, IMR0_8125), iv->txDroppedFifo, iv->rxDroppedFifo);
+    }
+    if (iv->statsTimer)
+        iv->statsTimer->WakeAtTime(kIOTimerClockMonotonicRaw, time + 5ULL * 1000000000ULL, 0);
 }
 
 #pragma mark - Start / Stop
@@ -941,6 +998,17 @@ kern_return_t IMPL(RTL8127Driver, Start)
     ivars->intSource->SetHandler(ivars->intAction);
     ivars->intSource->SetEnable(true);
 
+    /* Statistics timer, 5 s period, on the work queue. */
+    if (IOTimerDispatchSource::Create(ivars->workQueue, &ivars->statsTimer) == kIOReturnSuccess &&
+        CreateActionStatsTimerOccurred(sizeof(void *), &ivars->statsAction) == kIOReturnSuccess) {
+        uint64_t now = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
+        ivars->statsTimer->SetHandler(ivars->statsAction);
+        ivars->statsTimer->SetEnable(true);
+        ivars->statsTimer->WakeAtTime(kIOTimerClockMonotonicRaw, now + 5ULL * 1000000000ULL, 0);
+    } else {
+        Log("stats timer not available");
+    }
+
     /*
      * NDK pools + queues. Separate TX and RX pools: TX buffers are sized
      * for TSO packets, RX buffers for jumbo frames. Both are mapped into
@@ -1050,6 +1118,12 @@ kern_return_t IMPL(RTL8127Driver, Stop)
     RTL8127Driver_IVars *iv = ivars;
 
     if (iv) {
+        if (iv->statsTimer) {
+            iv->statsTimer->SetEnable(false);
+            iv->statsTimer->Cancel(^{});
+            OSSafeReleaseNULL(iv->statsTimer);
+        }
+        OSSafeReleaseNULL(iv->statsAction);
         if (iv->intSource) {
             iv->intSource->SetEnable(false);
             iv->intSource->Cancel(^{});
@@ -1127,6 +1201,8 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
         RTL_W32(tp, IMR0_8125, hw->intrMask);
 
         updateLinkStatus(this);
+        if (iv->txSubQueue)
+            iv->txSubQueue->requestDequeue();
     } else {
         iv->interfaceEnabled = false;
         iv->linkUp = false;
