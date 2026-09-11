@@ -231,7 +231,7 @@ bool RTL8127Driver::init()
      */
     ivars->mtu = 1500;
     ivars->hw->mtu = ivars->mtu;
-    ivars->tsoEnabled = true;
+    ivars->tsoEnabled = false;   /* see getHardwareAssists() experiment */
     return true;
 }
 
@@ -1596,13 +1596,16 @@ uint32_t RTL8127Driver::getMaxTransferUnit()
 
 uint32_t RTL8127Driver::getHardwareAssists()
 {
-    uint32_t assists = (kIOUserNetworkHWAssistTxChecksumIPHdr |
-                        kIOUserNetworkHWAssistTxChecksumTCP |
-                        kIOUserNetworkHWAssistTxChecksumUDP |
-                        kIOUserNetworkHWAssistRxChecksum);
-
-    if (ivars->tsoEnabled)
-        assists |= (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6);
+    /*
+     * EXPERIMENT (0.2.13): advertise no TX offload at all. On this build
+     * user-space TCP flows (Network.framework) never reach the driver:
+     * the flowswitch copies them into the netif (fsw "copied pkt -> pkt")
+     * but the netif never performs the "TxCopySum" copy that Apple's own
+     * Wi-Fi dext (no TX offload) shows. If flows work with this build, the
+     * TX offload advertisement is what breaks the native path.
+     */
+    uint32_t assists = kIOUserNetworkHWAssistRxChecksum;
+    (void)ivars;
     return assists;
 }
 
