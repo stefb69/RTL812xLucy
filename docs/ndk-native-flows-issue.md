@@ -1,7 +1,24 @@
 # Open issue: user-space TCP (Skywalk channel flows) never reaches the wire on a NetworkingDriverKit dext
 
-Status: open as of 2026-09-12 01:30 CEST. Everything below was observed on real
-hardware. Please cross-examine the reasoning and propose what to check next.
+Status: **RESOLVED 2026-09-12 01:22 CEST** by the external review
+([ndk-native-flows-review.md](ndk-native-flows-review.md), commit 89e93d0):
+native (flowswitch) TX packets carry the Ethernet frame at a 2-byte data
+offset inside the buffer, and `getDataVirtualAddress()` /
+`getDataIOVirtualAddress()` return the buffer base without that offset. The
+driver parsed and DMA'd from the base, so every native frame left the wire
+shifted by two bytes and no peer ever answered. Fix: resolve CPU and DMA
+addresses as base + `getDataOff()` (`RTL8127TxBuffer.h`). Verified on hardware
+with build 0.2.17: native SYNs logged with `dataoff 2`, SYN-ACKs received,
+codesign timestamps and Network.framework HTTP/HTTPS work over en10.
+
+The driver's own diagnostics missed it because the 12-line "odd frame"
+budget was consumed by ARP requests (42 bytes) before any native frame, and
+the offset log budget by BSD packets with a non-zero memory-segment offset.
+
+Original write-up kept below for the record.
+
+---
+
 
 ## Setup
 

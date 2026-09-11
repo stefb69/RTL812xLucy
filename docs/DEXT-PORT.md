@@ -156,6 +156,32 @@ Le dext et le kext matchent le même matériel : ne pas charger les deux en mêm
 temps (le kext a IOProbeScore 5000, le dext 6000 — désinstaller le kext de
 /Library/Extensions pendant les tests dext).
 
+## Leçons du premier test matériel du dext (11-12 sept. 2026)
+
+Pièges NDK rencontrés, tous corrigés (voir l'historique git et
+[ndk-native-flows-issue.md](ndk-native-flows-issue.md)) :
+
+- Personality : `IOClass = IOUserNetworkEthernet` + `CFBundleIdentifierKernel =
+  com.apple.iokit.IOSkywalkFamily` (pas `IOUserService`), sinon `super::Start`
+  échoue en 0xe00002bc.
+- Les 4 files NDK naissent désactivées : `setEnable(true)` à l'activation de
+  l'interface ; `requestDequeue()` sur les files TX au lien montant.
+- `USE_NEW_TX_DESC` doit être défini pour le hw layer du dext (descripteurs TX
+  32 octets), sinon le chip s'arrête après le premier descripteur.
+- `IONewZero()` n'exécute pas les initialiseurs C++ : positionner `hw->mtu`
+  explicitement, sinon `RxMaxSize` = 22 et le chip rejette toute trame.
+- `setMulticastAddresses()` (entrée NDK moderne) doit être implémenté, sinon
+  aucun groupe multicast (mDNS, solicited-node IPv6) n'est joint.
+- Les paquets natifs Skywalk (Network.framework) ont un décalage de données
+  de 2 octets : adresse CPU et IOVA = base + `getDataOff()`.
+- Une file TX par classe de service (BE/BK/VI/VO), comme les dexts d'Apple.
+- Ne pas appeler `bpfAttach()` : panic noyau dans IOSkywalkFamily au
+  remplacement du driver (macOS 26.6.2).
+- Libérer les dispatch sources depuis le bloc de complétion de `Cancel()`.
+- Logs : les `os_log` du dext apparaissent comme messages `kernel:` avec
+  l'émetteur `<bundle>.dext` ; chaînes en `%{public}s` ; les messages `DK:` du
+  noyau ne sont pas conservés (`log stream` en direct).
+
 ## Points ouverts
 
 - Débit : le modèle pool/queues NDK à 10 Gb/s est peu documenté publiquement —
