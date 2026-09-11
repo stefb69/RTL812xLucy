@@ -155,6 +155,10 @@ struct RTL8127Driver_IVars {
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
 
+    /* Hardware tally block (chip-side counters), dumped every stats tick. */
+    volatile RtlStatData *statData;
+    bool tallyPending;
+
     /* Descriptor rings and stats block. */
     IOBufferMemoryDescriptor *txRingMd;
     IOBufferMemoryDescriptor *rxRingMd;
@@ -807,6 +811,38 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
     struct rtl8125_private *tp = &hw->linuxData;
 
     if (iv->interfaceEnabled) {
+        /* Chip tally counters: the dump issued at the previous tick has
+         * landed when the CounterDump bit reads back clear. */
+        if (iv->tallyPending && !(RTL_R32(tp, CounterAddrLow) & CounterDump) && iv->statData) {
+            volatile RtlStatData *st = iv->statData;
+            Log("tally: tx pkts %llu err %llu underrun %u | rx pkts %llu err %u missed %u macmissed-runt %u uni %llu bcast %llu mcast %u | octets tx %llu rx %llu",
+                (uint64_t)OSSwapLittleToHostInt64(st->txPackets), (uint64_t)OSSwapLittleToHostInt64(st->txErrors),
+                OSSwapLittleToHostInt16(st->txUnderun),
+                (uint64_t)OSSwapLittleToHostInt64(st->rxPackets), OSSwapLittleToHostInt32(st->rxErrors),
+                OSSwapLittleToHostInt16(st->rxMissed), OSSwapLittleToHostInt32(st->rxRunt),
+                (uint64_t)OSSwapLittleToHostInt64(st->rxUnicast), (uint64_t)OSSwapLittleToHostInt64(st->rxBroadcast),
+                OSSwapLittleToHostInt32(st->rxMulticast),
+                (uint64_t)OSSwapLittleToHostInt64(st->txOctets), (uint64_t)OSSwapLittleToHostInt64(st->rxOctets));
+            iv->tallyPending = false;
+        }
+        if (!iv->tallyPending) {
+            uint32_t cmd = (uint32_t)(hw->statPhyAddr & 0xffffffffULL);
+            RTL_W32(tp, CounterAddrHigh, (uint32_t)(hw->statPhyAddr >> 32));
+            RTL_W32(tp, CounterAddrLow, cmd);
+            RTL_W32(tp, CounterAddrLow, cmd | CounterDump);
+            iv->tallyPending = true;
+        }
+
+        {
+            uint32_t ri = hw->rxNextDescIndex;
+            Log("regs: ChipCmd 0x%02x RxConfig 0x%08x TxConfig 0x%08x RxMaxSize %u RxDesc 0x%08x%08x (ring 0x%llx) TxDesc 0x%08x%08x (ring 0x%llx) | rx next %u opts1 0x%08x addr 0x%llx rxPkt %{public}s",
+                RTL_R8(tp, ChipCmd), RTL_R32(tp, RxConfig), RTL_R32(tp, TxConfig), RTL_R16(tp, RxMaxSize),
+                RTL_R32(tp, RxDescAddrHigh), RTL_R32(tp, RxDescAddrLow), hw->rxPhyAddr,
+                RTL_R32(tp, TxDescStartAddrHigh), RTL_R32(tp, TxDescStartAddrLow), hw->txPhyAddr,
+                ri, OSSwapLittleToHostInt32(iv->rxRing[ri].opts1), (uint64_t)OSSwapLittleToHostInt64(iv->rxRing[ri].addr),
+                iv->rxPkt[ri] ? "set" : "NULL");
+        }
+
         Log("stats: link %u tx sub %llu done %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
             iv->linkUp, iv->txSubmitted, iv->txCompleted,
             __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
@@ -966,6 +1002,8 @@ kern_return_t IMPL(RTL8127Driver, Start)
         goto fail;
     }
     hw->statPhyAddr = iova;
+    ivars->statData = (volatile RtlStatData *)virt;
+    memset(virt, 0, kStatSize);
 
     memset((void *)ivars->txRing, 0, kTxDescSize);
     memset((void *)ivars->rxRing, 0, kRxDescSize);
