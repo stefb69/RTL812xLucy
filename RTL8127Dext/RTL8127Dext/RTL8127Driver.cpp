@@ -54,6 +54,7 @@
 #undef LinkStatus
 
 #include "RTL8127Driver.h"
+#include "RTL8127TxBuffer.h"
 
 #define Log(fmt, ...) os_log(OS_LOG_DEFAULT, "RTL8127Dext: " fmt, ##__VA_ARGS__)
 
@@ -159,12 +160,15 @@ struct RTL8127Driver_IVars {
     uint64_t isrCount, isrRx, isrTx, isrTimer, isrLink;
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
-    uint32_t synLogged;
+    uint32_t txSynLogged, rxSynLogged;
     uint32_t offLogged;
     uint32_t oddLogged;
     uint64_t txBadLen;
     uint64_t txDequeueCalls[kNumTxQueues];
     uint64_t txPerQueue[kNumTxQueues];
+    uint64_t txNoLinkCalls, txNoLinkPackets, txNoSpaceCalls, txNoSpacePackets;
+    uint64_t txNonzeroDataOffset;
+    uint32_t mediaQueryLogged;
 
 
     /* Hardware tally block (chip-side counters), dumped every stats tick. */
@@ -377,10 +381,9 @@ static uint32_t prepareTSO6(uint8_t *frame)
  * engine produces the same result, so map it to the hardware bits and
  * return true; anything else gets the sum computed here.
  */
-static bool txPartialChecksum(IOUserNetworkPacket *pkt, uint32_t len,
+static bool txPartialChecksum(uint8_t *frame, uint32_t len,
                               uint16_t start, uint16_t stuff, uint32_t *opts2)
 {
-    uint8_t *frame = (uint8_t *)pkt->getDataVirtualAddress();
     if (!frame || len < kMacHdrLen + 20)
         return false;
 
@@ -438,11 +441,18 @@ static bool describeTcpSyn(const uint8_t *f, uint32_t len, char *out, size_t out
     if (!f || len < 54) return false;
     uint16_t et = (uint16_t)(f[12] << 8 | f[13]);
     uint32_t l4; const char *v;
-    if (et == 0x0800 && f[23] == 6) { l4 = 14 + ((f[14] & 0x0f) << 2); v = "v4"; }
-    else if (et == 0x86DD && f[20] == 6) { l4 = 54; v = "v6"; }
+    if (et == 0x0800 && (f[14] >> 4) == 4 && f[23] == 6) {
+        uint32_t ipHeaderLen = (f[14] & 0x0f) << 2;
+        if (ipHeaderLen < 20 || (f[20] & 0x1f) || f[21]) return false;
+        l4 = 14 + ipHeaderLen; v = "v4";
+    }
+    else if (et == 0x86DD && (f[14] >> 4) == 6 && f[20] == 6) { l4 = 54; v = "v6"; }
     else return false;
-    if (len < l4 + 14) return false;
+    if (len < l4 + 20) return false;
+    uint32_t tcpHeaderLen = (f[l4 + 12] >> 4) << 2;
+    if (tcpHeaderLen < 20 || tcpHeaderLen > len - l4) return false;
     uint8_t flags = f[l4 + 13];
+    if (!(flags & TH_SYN)) return false;
     unsigned sport = (unsigned)(f[l4] << 8 | f[l4 + 1]);
     unsigned dport = (unsigned)(f[l4 + 2] << 8 | f[l4 + 3]);
     if (sport != 80 && dport != 80)
@@ -506,44 +516,70 @@ static uint32_t txDequeueAction(OSObject *target,
     uint32_t accepted = 0;
     uint32_t qidx = txQueueIndex(iv, queue);
 
-    if (!iv->linkUp)
-        return 0;
-
     IOLockLock(iv->txLock);
     iv->txDequeueCalls[qidx]++;
     iv->txPerQueue[qidx] += packetCount;
+    /* Observe every offered packet, including those refused below. */
+    for (uint32_t i = 0; i < packetCount; i++) {
+        IOUserNetworkPacket *pkt = packets[i];
+        size_t doff = pkt->getDataOff();
+        if (doff) {
+            iv->txNonzeroDataOffset++;
+            if (iv->offLogged < 12) {
+                iv->offLogged++;
+                Log("tx offered with offset: q %u dataoff %zu memseg %llu len %u iova 0x%llx",
+                    qidx, doff, pkt->getMemorySegmentOffset(), pkt->getDataLength(),
+                    pkt->getDataIOVirtualAddress());
+            }
+        }
+    }
+    if (!iv->linkUp) {
+        iv->txNoLinkCalls++;
+        iv->txNoLinkPackets += packetCount;
+        IOLockUnlock(iv->txLock);
+        return 0;
+    }
     for (uint32_t i = 0; i < packetCount; i++) {
         IOUserNetworkPacket *pkt = packets[i];
         uint32_t len = pkt->getDataLength();
-        uint64_t iova = pkt->getDataIOVirtualAddress();
+        size_t dataOffset = pkt->getDataOff();
+        RTL8127TxBufferView data;
         uint32_t cmd = 0, opts1, opts2 = 0;
         uint32_t index;
 
-        if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= 2)
+        if (__atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE) <= 2) {
+            iv->txNoSpaceCalls++;
+            iv->txNoSpacePackets += packetCount - i;
             break;
-
-        if (iv->oddLogged < 12) {
-            const uint8_t *va = (const uint8_t *)pkt->getDataVirtualAddress();
-            uint16_t et = (len >= 14 && va) ? (uint16_t)(va[12] << 8 | va[13]) : 0;
-            if (len < 54 || (et != 0x0800 && et != 0x86DD && et != 0x0806)) {
-                iv->oddLogged++;
-                Log("tx odd pkt: q %u len %u dataoff %u svc 0x%x ethertype 0x%04x head %02x%02x%02x%02x%02x%02x %02x%02x%02x%02x%02x%02x %02x%02x %02x%02x%02x%02x",
-                    qidx, len, pkt->getDataOffset(), pkt->getServiceClass(), et,
-                    va?va[0]:0, va?va[1]:0, va?va[2]:0, va?va[3]:0, va?va[4]:0, va?va[5]:0,
-                    va?va[6]:0, va?va[7]:0, va?va[8]:0, va?va[9]:0, va?va[10]:0, va?va[11]:0,
-                    va?va[12]:0, va?va[13]:0, va?va[14]:0, va?va[15]:0, va?va[16]:0, va?va[17]:0);
-            }
         }
-        if (len == 0 || len > kTxBufferSize) {
+
+        /* Native Ethernet flows can retain two padding bytes before L2.
+         * The VA/IOVA getters return the buffer base, not the frame start. */
+        if (len < kMacHdrLen ||
+            !rtl8127TxBufferView(pkt->getDataVirtualAddress(), pkt->getDataIOVirtualAddress(),
+                                dataOffset, len, kTxBufferSize, data)) {
             iv->txBadLen++;
-            /* Cannot happen with our pool geometry; don't feed the chip. */
             pkt->setCompletionStatus(kIOReturnBadArgument);
             if (!fifoPush(&iv->txDoneFifo[qidx], pkt))
                 iv->txPool->deallocatePacket(pkt);
             accepted++;
             continue;
         }
+        uint8_t *frame = data.frame;
+        uint64_t iova = data.iova;
 
+        if (iv->oddLogged < 12) {
+            const uint8_t *va = len >= 18 ? frame : nullptr;
+            uint16_t et = (len >= 14 && va) ? (uint16_t)(va[12] << 8 | va[13]) : 0;
+            if (len < 54 || (et != 0x0800 && et != 0x86DD && et != 0x0806)) {
+                iv->oddLogged++;
+                Log("tx odd pkt: q %u len %u dataoff %zu svc 0x%x ethertype 0x%04x head %02x%02x%02x%02x%02x%02x %02x%02x%02x%02x%02x%02x %02x%02x %02x%02x%02x%02x",
+                    qidx, len, dataOffset, pkt->getServiceClass(), et,
+                    va?va[0]:0, va?va[1]:0, va?va[2]:0, va?va[3]:0, va?va[4]:0, va?va[5]:0,
+                    va?va[6]:0, va?va[7]:0, va?va[8]:0, va?va[9]:0, va?va[10]:0, va?va[11]:0,
+                    va?va[12]:0, va?va[13]:0, va?va[14]:0, va?va[15]:0, va?va[16]:0, va?va[17]:0);
+            }
+        }
         /*
          * TSO: same descriptor recipe as the kext outputStart(). A TSO
          * packet that fits in one MTU-sized frame is sent as a plain
@@ -557,7 +593,6 @@ static uint32_t txDequeueAction(OSObject *target,
 
         if (iv->tsoEnabled && (tso & (kIOUserNetworkPacketTSOIPV4 | kIOUserNetworkPacketTSOIPV6)) &&
             (len - kMacHdrLen) > iv->mtu) {
-            uint8_t *frame = (uint8_t *)pkt->getDataVirtualAddress();
             uint32_t tcpOff;
             uint32_t segsz = mss;
 
@@ -580,7 +615,7 @@ static uint32_t txDequeueAction(OSObject *target,
 
             if (csum & kIOUserNetworkPacketTxCsumPartial) {
                 iv->txPartial++;
-                if (!txPartialChecksum(pkt, len, start, stuff, &opts2))
+                if (!txPartialChecksum(frame, len, start, stuff, &opts2))
                     iv->txPartialFail++;
             } else if ((csum & kIOUserNetworkPacketTxCsumTCPIPV4) || (tso & kIOUserNetworkPacketTSOIPV4))
                 opts2 = (TxIPCS_C | TxTCPCS_C);
@@ -610,26 +645,15 @@ static uint32_t txDequeueAction(OSObject *target,
         iv->txSubmitted++;
         iv->txBytes += len;
         if (cmd) iv->txTso++;
-        {
-            uint16_t doff = pkt->getDataOffset();
-            uint64_t moff = pkt->getMemorySegmentOffset();
-            const uint8_t *va = (const uint8_t *)pkt->getDataVirtualAddress();
-            if ((doff != 0 || moff != 0) && iv->offLogged < 12) {
-                iv->offLogged++;
-                Log("tx pkt with offsets: dataoff %u memseg %llu len %u va-ethertype %02x%02x va+doff-ethertype %02x%02x iova 0x%llx",
-                    doff, moff, len, va ? va[12] : 0, va ? va[13] : 0,
-                    va ? va[doff + 12] : 0, va ? va[doff + 13] : 0, iova);
-            }
-        }
-        if (iv->synLogged < 100) {
+        if (iv->txSynLogged < 100) {
             char d[96];
-            if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), len, d, sizeof(d))) {
-                iv->synLogged++;
+            if (describeTcpSyn(frame, len, d, sizeof(d))) {
+                iv->txSynLogged++;
                 uint32_t tf = pkt->getTxCsumFlags();
                 IOUserNetworkPacketTxChecksumFlags cf = 0; uint16_t cs = 0, cst = 0;
                 pkt->getTxChecksumInfo(&cf, &cs, &cst);
-                Log("tx SYN %{public}s csumflags 0x%x info 0x%x start %u stuff %u tso 0x%x/%u opts2 0x%08x cmd 0x%08x dataoff %u",
-                    d, tf, cf, cs, cst, tso, mss, opts2, cmd, pkt->getDataOffset());
+                Log("tx SYN %{public}s csumflags 0x%x info 0x%x start %u stuff %u tso 0x%x/%u opts2 0x%08x cmd 0x%08x dataoff %zu",
+                    d, tf, cf, cs, cst, tso, mss, opts2, cmd, dataOffset);
             }
         }
 
@@ -863,10 +887,10 @@ static void rxRingService(RTL8127Driver *driver)
                 pkt->setRxChecksumInfo(csum, 0xffff);
 
             iv->rxDelivered++;
-            if (iv->synLogged < 100) {
+            if (iv->rxSynLogged < 100) {
                 char d[96];
                 if (describeTcpSyn((const uint8_t *)pkt->getDataVirtualAddress(), (uint32_t)length, d, sizeof(d))) {
-                    iv->synLogged++;
+                    iv->rxSynLogged++;
                     Log("rx SYN %{public}s opts2 0x%08x", d, opts2);
                 }
             }
@@ -930,8 +954,8 @@ static void updateLinkStatus(RTL8127Driver *driver)
         if (!iv->linkUp || media != iv->currentMedia) {
             iv->linkUp = true;
             iv->currentMedia = media;
-            driver->reportLinkStatus(kIOUserNetworkLinkStatusActive, media);
-            Log("link up, media 0x%08x", media);
+            IOReturn linkRet = driver->reportLinkStatus(kIOUserNetworkLinkStatusActive, media);
+            Log("link up, media 0x%08x reportLinkStatus 0x%x", media, linkRet);
 
             /* Packets refused while the link was down are still queued in
              * the framework: ask for them now, and for fresh rx buffers. */
@@ -953,8 +977,8 @@ static void updateLinkStatus(RTL8127Driver *driver)
         hw->txNextDescIndex = hw->txDirtyDescIndex = 0;
         hw->txNumFreeDesc = kNumTxDesc;
 
-        driver->reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
-        Log("link down");
+        IOReturn linkRet = driver->reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
+        Log("link down, reportLinkStatus 0x%x", linkRet);
 
         hw->rtl812xSetPhyMedium(tp, tp->autoneg, tp->speed, tp->duplex, tp->advertising);
     }
@@ -1053,9 +1077,13 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
                 iv->rxPkt[ri] ? "set" : "NULL");
         }
 
-        Log("txq: calls %llu/%llu/%llu/%llu pkts %llu/%llu/%llu/%llu badlen %llu",
+        IOLockLock(iv->txLock);
+        Log("txq: calls %llu/%llu/%llu/%llu pkts %llu/%llu/%llu/%llu badlen %llu | refused link calls %llu pkts %llu space calls %llu pkts %llu | offered offset-nonzero %llu",
             iv->txDequeueCalls[0], iv->txDequeueCalls[1], iv->txDequeueCalls[2], iv->txDequeueCalls[3],
-            iv->txPerQueue[0], iv->txPerQueue[1], iv->txPerQueue[2], iv->txPerQueue[3], iv->txBadLen);
+            iv->txPerQueue[0], iv->txPerQueue[1], iv->txPerQueue[2], iv->txPerQueue[3], iv->txBadLen,
+            iv->txNoLinkCalls, iv->txNoLinkPackets, iv->txNoSpaceCalls, iv->txNoSpacePackets,
+            iv->txNonzeroDataOffset);
+        IOLockUnlock(iv->txLock);
         Log("stats: link %u tx sub %llu done %llu tso %llu partial %llu/%llu bytes %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
             iv->linkUp, iv->txSubmitted, iv->txCompleted, iv->txTso, iv->txPartial, iv->txPartialFail, iv->txBytes,
             __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
@@ -1532,7 +1560,8 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
                 iv->rxPkt[i] = nullptr;
             }
         }
-        reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
+        IOReturn linkRet = reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
+        Log("interface disabled, reportLinkStatus 0x%x", linkRet);
     }
     return kIOReturnSuccess;
 }
@@ -1612,6 +1641,7 @@ IOReturn RTL8127Driver::getSupportedMediaArray(MediaWord *mediaArray, uint32_t *
     if (!mediaCount)
         return kIOReturnBadArgument;
 
+    uint32_t capacity = mediaArray ? *mediaCount : 0;
     if (mediaArray) {
         uint32_t n = (*mediaCount < ivars->mediaCount) ? *mediaCount : ivars->mediaCount;
         for (uint32_t i = 0; i < n; i++)
@@ -1620,6 +1650,9 @@ IOReturn RTL8127Driver::getSupportedMediaArray(MediaWord *mediaArray, uint32_t *
     } else {
         *mediaCount = ivars->mediaCount;
     }
+    if (__atomic_fetch_add(&ivars->mediaQueryLogged, 1U, __ATOMIC_RELAXED) < 12)
+        Log("getSupportedMediaArray: array %{public}s capacity %u available %u returned %u",
+            mediaArray ? "set" : "NULL", capacity, ivars->mediaCount, *mediaCount);
     return kIOReturnSuccess;
 }
 
