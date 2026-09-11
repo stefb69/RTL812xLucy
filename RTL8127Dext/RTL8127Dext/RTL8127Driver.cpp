@@ -1190,6 +1190,16 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
         /* Full enable sequence, same as the kext rtl812xEnable(). */
         hw->rtl812xEnable();
 
+        /*
+         * The NDK queues start out disabled: until setEnable(true) the
+         * framework never runs our dequeue actions nor delivers our
+         * completions. Enable them once the hardware is configured.
+         */
+        if (iv->txSubQueue)  iv->txSubQueue->setEnable(true);
+        if (iv->txCompQueue) iv->txCompQueue->setEnable(true);
+        if (iv->rxSubQueue)  iv->rxSubQueue->setEnable(true);
+        if (iv->rxCompQueue) iv->rxCompQueue->setEnable(true);
+
         /* Hardware is configured: arm the RX ring and start the engines. */
         rxRingRefill(iv);
         if (iv->rxSubQueue)
@@ -1209,6 +1219,11 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
 
         hw->rtl812xDisable();
         txRingReclaim(this, true);
+
+        if (iv->txSubQueue)  { iv->txSubQueue->setEnable(false); iv->txSubQueue->purgePackets(); }
+        if (iv->txCompQueue) iv->txCompQueue->setEnable(false);
+        if (iv->rxSubQueue)  iv->rxSubQueue->setEnable(false);
+        if (iv->rxCompQueue) iv->rxCompQueue->setEnable(false);
 
         /* Drop ring-held rx packets back into the pool. */
         for (uint32_t i = 0; i < kNumRxDesc; i++) {
