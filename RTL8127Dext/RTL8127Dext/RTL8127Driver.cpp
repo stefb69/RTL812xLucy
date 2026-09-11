@@ -93,6 +93,7 @@ struct RtlDextRxDesc {
  * (16 MB) covers many milliseconds at 10 Gbit/s and halves the TSO packet
  * rate compared to 16 KB buffers. */
 #define kTxPoolPackets  512
+#define kNumTxQueues    4       /* one TX queue per service class: BE, BK, VI, VO */
 #define kMacHdrLen      14
 #define kIPv6HdrLen     40
 #define kTxDescLenMask  0xFFFF
@@ -176,20 +177,25 @@ struct RTL8127Driver_IVars {
     volatile RtlDextTxDesc *txRing;
     volatile RtlDextRxDesc *rxRing;
 
-    /* NDK objects. */
+    /* NDK objects. One TX submission/completion pair per service class:
+     * native (Skywalk) flows are enqueued by the netif to the queue of
+     * their class and silently dropped when no queue of that class exists. */
     IOUserNetworkPacketBufferPool *txPool;
     IOUserNetworkPacketBufferPool *rxPool;
-    IOUserNetworkTxSubmissionQueue *txSubQueue;
-    IOUserNetworkTxCompletionQueue *txCompQueue;
+    IOUserNetworkTxSubmissionQueue *txSubQueues[kNumTxQueues];
+    IOUserNetworkTxCompletionQueue *txCompQueues[kNumTxQueues];
     IOUserNetworkRxSubmissionQueue *rxSubQueue;
     IOUserNetworkRxCompletionQueue *rxCompQueue;
+    IOLock *txLock;     /* the TX ring is shared by the per-class dequeue actions */
 
-    /* Per-slot packets owned by the hardware rings. */
+    /* Per-slot packets owned by the hardware rings, and the TX queue index
+     * each TX packet came from (its completion goes back to that class). */
     IOUserNetworkPacket *txPkt[kNumTxDesc];
+    uint8_t txPktQueue[kNumTxDesc];
     IOUserNetworkPacket *rxPkt[kNumRxDesc];
 
     /* Producer/consumer hand-off between interrupt and queue actions. */
-    PacketFifo txDoneFifo;
+    PacketFifo txDoneFifo[kNumTxQueues];
     PacketFifo rxDoneFifo;
     PacketFifo rxFreeFifo;
 
@@ -462,6 +468,22 @@ static bool describeTcpSyn(const uint8_t *f, uint32_t len, char *out, size_t out
     return true;
 }
 
+static const IOUserNetworkServiceClass kTxServiceClasses[kNumTxQueues] = {
+    kIOUserNetworkPacketServiceClassBE,
+    kIOUserNetworkPacketServiceClassBK,
+    kIOUserNetworkPacketServiceClassVI,
+    kIOUserNetworkPacketServiceClassVO,
+};
+
+static inline uint32_t txQueueIndex(RTL8127Driver_IVars *iv, IOUserNetworkPacketQueue *q)
+{
+    for (uint32_t i = 0; i < kNumTxQueues; i++)
+        if ((IOUserNetworkPacketQueue *)iv->txSubQueues[i] == q ||
+            (IOUserNetworkPacketQueue *)iv->txCompQueues[i] == q)
+            return i;
+    return 0;
+}
+
 #pragma mark - NDK queue actions
 
 /*
@@ -479,10 +501,12 @@ static uint32_t txDequeueAction(OSObject *target,
     RTL8127Hw *hw = iv->hw;
     struct rtl8125_private *tp = &hw->linuxData;
     uint32_t accepted = 0;
+    uint32_t qidx = txQueueIndex(iv, queue);
 
     if (!iv->linkUp)
         return 0;
 
+    IOLockLock(iv->txLock);
     for (uint32_t i = 0; i < packetCount; i++) {
         IOUserNetworkPacket *pkt = packets[i];
         uint32_t len = pkt->getDataLength();
@@ -496,7 +520,7 @@ static uint32_t txDequeueAction(OSObject *target,
         if (len == 0 || len > kTxBufferSize) {
             /* Cannot happen with our pool geometry; don't feed the chip. */
             pkt->setCompletionStatus(kIOReturnBadArgument);
-            if (!fifoPush(&iv->txDoneFifo, pkt))
+            if (!fifoPush(&iv->txDoneFifo[qidx], pkt))
                 iv->txPool->deallocatePacket(pkt);
             accepted++;
             continue;
@@ -560,6 +584,7 @@ static uint32_t txDequeueAction(OSObject *target,
             opts1 |= RingEnd;
 
         iv->txPkt[index] = pkt;
+        iv->txPktQueue[index] = (uint8_t)qidx;
         desc->addr = OSSwapHostToLittleInt64(iova);
         desc->opts2 = OSSwapHostToLittleInt32(opts2);
         desc->opts1 = OSSwapHostToLittleInt32(opts1 | DescOwn);
@@ -607,6 +632,7 @@ static uint32_t txDequeueAction(OSObject *target,
         wmb();
         hw->rtl812xDoorbell(tp, hw->txTailPtr0);
     }
+    IOLockUnlock(iv->txLock);
     return accepted;
 }
 
@@ -637,9 +663,10 @@ static uint32_t txEnqueueAction(OSObject *target,
     RTL8127Driver *driver = (RTL8127Driver *)target;
     RTL8127Driver_IVars *iv = driver->ivars;
     uint32_t count = 0;
+    uint32_t qidx = txQueueIndex(iv, queue);
 
     while (count < arrayCapacity) {
-        IOUserNetworkPacket *pkt = fifoPop(&iv->txDoneFifo);
+        IOUserNetworkPacket *pkt = fifoPop(&iv->txDoneFifo[qidx]);
         if (!pkt)
             break;
         packets[count++] = pkt;
@@ -729,19 +756,23 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
     struct rtl8125_private *tp = &hw->linuxData;
     uint32_t nextClose = abort ? hw->txTailPtr0 : hw->rtl812xGetHwCloPtr(tp);
     uint32_t numDone = (nextClose - hw->txClosePtr0) & tp->MaxTxDescPtrMask;
-    bool didWork = false;
+    bool didWork[kNumTxQueues] = {};
+    bool any = false;
 
     hw->txClosePtr0 = nextClose;
 
     while (numDone-- > 0) {
         uint32_t index = hw->txDirtyDescIndex;
         IOUserNetworkPacket *pkt = iv->txPkt[index];
+        uint32_t qidx = iv->txPktQueue[index] < kNumTxQueues ? iv->txPktQueue[index] : 0;
 
         iv->txPkt[index] = nullptr;
         if (pkt) {
             pkt->setCompletionStatus(abort ? kIOReturnAborted : kIOReturnSuccess);
             iv->txCompleted++;
-            if (!fifoPush(&iv->txDoneFifo, pkt)) {
+            didWork[qidx] = true;
+            any = true;
+            if (!fifoPush(&iv->txDoneFifo[qidx], pkt)) {
                 iv->txDroppedFifo++;
                 if (!iv->txDropWarned) {
                     iv->txDropWarned = true;
@@ -749,15 +780,17 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
                 }
                 iv->txPool->deallocatePacket(pkt);
             }
-            didWork = true;
         }
         OSAddAtomic(1, &hw->txNumFreeDesc);
         hw->txDirtyDescIndex = (index + 1) & kTxDescMask;
     }
-    if (didWork && iv->txCompQueue) {
-        iv->txCompQueue->requestEnqueue();
-        if (iv->txSubQueue)
-            iv->txSubQueue->requestDequeue();
+    if (any) {
+        for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            if (didWork[i] && iv->txCompQueues[i])
+                iv->txCompQueues[i]->requestEnqueue();
+            if (iv->txSubQueues[i])
+                iv->txSubQueues[i]->requestDequeue();
+        }
     }
 }
 
@@ -884,8 +917,9 @@ static void updateLinkStatus(RTL8127Driver *driver)
 
             /* Packets refused while the link was down are still queued in
              * the framework: ask for them now, and for fresh rx buffers. */
-            if (iv->txSubQueue)
-                iv->txSubQueue->requestDequeue();
+            for (uint32_t i = 0; i < kNumTxQueues; i++)
+                if (iv->txSubQueues[i])
+                    iv->txSubQueues[i]->requestDequeue();
             if (iv->rxSubQueue)
                 iv->rxSubQueue->requestDequeue();
         }
@@ -1240,30 +1274,47 @@ kern_return_t IMPL(RTL8127Driver, Start)
         }
     }
 
-    ivars->txSubQueue = IOUserNetworkTxSubmissionQueue::withPool(ivars->txPool,
-        kTxPoolPackets, 0, this, txQueryFreeSpace, txDequeueAction);
-    ivars->txCompQueue = IOUserNetworkTxCompletionQueue::withPool(ivars->txPool,
-        kTxPoolPackets, 0, this, txEnqueueAction);
-    ivars->rxSubQueue = IOUserNetworkRxSubmissionQueue::withPool(ivars->rxPool,
-        kNumRxDesc, kNumRxDesc, 1, this, rxDequeueAction);
-    ivars->rxCompQueue = IOUserNetworkRxCompletionQueue::withPool(ivars->rxPool,
-        kNumRxDesc, 1, this, rxEnqueueAction);
+    ivars->txLock = IOLockAlloc();
+    if (!ivars->txLock) {
+        Log("tx lock allocation failed");
+        goto fail;
+    }
 
-    if (!ivars->txSubQueue || !ivars->txCompQueue ||
-        !ivars->rxSubQueue || !ivars->rxCompQueue) {
-        Log("NDK queue creation failed");
+    /* TX: one submission/completion pair per service class, ids 0..3. */
+    for (uint32_t i = 0; i < kNumTxQueues; i++) {
+        ivars->txSubQueues[i] = IOUserNetworkTxSubmissionQueue::withPoolAndServiceClass(
+            ivars->txPool, kTxServiceClasses[i], kTxPoolPackets, i, this,
+            txQueryFreeSpace, txDequeueAction);
+        ivars->txCompQueues[i] = IOUserNetworkTxCompletionQueue::withPool(
+            ivars->txPool, kTxPoolPackets, i, this, txEnqueueAction);
+        if (!ivars->txSubQueues[i] || !ivars->txCompQueues[i]) {
+            Log("NDK tx queue %u creation failed", i);
+            goto fail;
+        }
+    }
+    ivars->rxSubQueue = IOUserNetworkRxSubmissionQueue::withPool(ivars->rxPool,
+        kNumRxDesc, kNumRxDesc, kNumTxQueues, this, rxDequeueAction);
+    ivars->rxCompQueue = IOUserNetworkRxCompletionQueue::withPool(ivars->rxPool,
+        kNumRxDesc, kNumTxQueues, this, rxEnqueueAction);
+
+    if (!ivars->rxSubQueue || !ivars->rxCompQueue) {
+        Log("NDK rx queue creation failed");
         goto fail;
     }
 
     {
-        IOUserNetworkPacketQueue *queues[4] = {
-            ivars->txSubQueue, ivars->txCompQueue,
-            ivars->rxSubQueue, ivars->rxCompQueue,
-        };
+        IOUserNetworkPacketQueue *queues[2 * kNumTxQueues + 2];
+        uint32_t n = 0;
+        for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            queues[n++] = ivars->txSubQueues[i];
+            queues[n++] = ivars->txCompQueues[i];
+        }
+        queues[n++] = ivars->rxSubQueue;
+        queues[n++] = ivars->rxCompQueue;
         ether_addr_t mac = {};
         memcpy(mac.octet, hw->currMacAddr.bytes, 6);
 
-        ret = registerEthernetInterface(mac, queues, 4, ivars->txPool, ivars->rxPool);
+        ret = registerEthernetInterface(mac, queues, n, ivars->txPool, ivars->rxPool);
         if (ret != kIOReturnSuccess) {
             Log("registerEthernetInterface failed: 0x%x", ret);
             goto fail;
@@ -1373,12 +1424,18 @@ kern_return_t IMPL(RTL8127Driver, Stop)
                 }
             }
         }
-        OSSafeReleaseNULL(iv->txSubQueue);
-        OSSafeReleaseNULL(iv->txCompQueue);
+        for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            OSSafeReleaseNULL(iv->txSubQueues[i]);
+            OSSafeReleaseNULL(iv->txCompQueues[i]);
+        }
         OSSafeReleaseNULL(iv->rxSubQueue);
         OSSafeReleaseNULL(iv->rxCompQueue);
         OSSafeReleaseNULL(iv->txPool);
         OSSafeReleaseNULL(iv->rxPool);
+        if (iv->txLock) {
+            IOLockFree(iv->txLock);
+            iv->txLock = nullptr;
+        }
 
         if (iv->opened && iv->pciDevice) {
             iv->pciDevice->Close(this, 0);
@@ -1407,8 +1464,10 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
          * framework never runs our dequeue actions nor delivers our
          * completions. Enable them once the hardware is configured.
          */
-        if (iv->txSubQueue)  iv->txSubQueue->setEnable(true);
-        if (iv->txCompQueue) iv->txCompQueue->setEnable(true);
+        for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            if (iv->txSubQueues[i])  iv->txSubQueues[i]->setEnable(true);
+            if (iv->txCompQueues[i]) iv->txCompQueues[i]->setEnable(true);
+        }
         if (iv->rxSubQueue)  iv->rxSubQueue->setEnable(true);
         if (iv->rxCompQueue) iv->rxCompQueue->setEnable(true);
 
@@ -1423,8 +1482,9 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
         RTL_W32(tp, IMR0_8125, hw->intrMask);
 
         updateLinkStatus(this);
-        if (iv->txSubQueue)
-            iv->txSubQueue->requestDequeue();
+        for (uint32_t i = 0; i < kNumTxQueues; i++)
+            if (iv->txSubQueues[i])
+                iv->txSubQueues[i]->requestDequeue();
     } else {
         iv->interfaceEnabled = false;
         iv->linkUp = false;
@@ -1432,8 +1492,10 @@ IOReturn RTL8127Driver::setInterfaceEnable(bool enable)
         hw->rtl812xDisable();
         txRingReclaim(this, true);
 
-        if (iv->txSubQueue)  { iv->txSubQueue->setEnable(false); iv->txSubQueue->purgePackets(); }
-        if (iv->txCompQueue) iv->txCompQueue->setEnable(false);
+        for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            if (iv->txSubQueues[i])  { iv->txSubQueues[i]->setEnable(false); iv->txSubQueues[i]->purgePackets(); }
+            if (iv->txCompQueues[i]) iv->txCompQueues[i]->setEnable(false);
+        }
         if (iv->rxSubQueue)  iv->rxSubQueue->setEnable(false);
         if (iv->rxCompQueue) iv->rxCompQueue->setEnable(false);
 
