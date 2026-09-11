@@ -147,6 +147,18 @@ static inline IOUserNetworkPacket *fifoPop(PacketFifo *f)
     return p;
 }
 
+/* Diagnostic sample only: -1 means the consumer moved during every attempt. */
+static int32_t fifoSampleDepth(PacketFifo *f)
+{
+    for (unsigned i = 0; i < 3; i++) {
+        UInt32 head = __atomic_load_n(&f->head, __ATOMIC_ACQUIRE);
+        UInt32 tail = __atomic_load_n(&f->tail, __ATOMIC_ACQUIRE);
+        if (head == __atomic_load_n(&f->head, __ATOMIC_ACQUIRE))
+            return (tail - head) & kFifoMask;
+    }
+    return -1;
+}
+
 struct RTL8127Driver_IVars {
     IOPCIDevice *pciDevice;
     DextPciConfig cfg;
@@ -181,6 +193,12 @@ struct RTL8127Driver_IVars {
     uint64_t txPerQueue[kNumTxQueues];
     uint64_t txNoLinkCalls, txNoLinkPackets, txNoSpaceCalls, txNoSpacePackets;
     uint64_t txNonzeroDataOffset;
+    uint64_t txNonemptyCalls;
+    uint64_t txCompletionCalls[kNumTxQueues], txCompletionPackets[kNumTxQueues];
+    /* Work-queue diagnostics only; abort reclamation does not update them. */
+    uint64_t txReclaimCalls, txReclaimNonempty, txReclaimedDescriptors;
+    uint32_t txReclaimMaxBatch;
+    uint32_t txDoneSampledMax[kNumTxQueues]; /* sampled after reclaim and at stats ticks */
     uint32_t mediaQueryLogged;
 
 
@@ -530,6 +548,7 @@ static uint32_t txDequeueAction(OSObject *target,
     uint32_t qidx = txQueueIndex(iv, queue);
 
     IOLockLock(iv->txLock);
+    uint64_t submittedBefore = iv->txSubmitted;
     iv->txDequeueCalls[qidx]++;
     iv->txPerQueue[qidx] += packetCount;
     /* Observe every offered packet, including those refused below. */
@@ -682,6 +701,8 @@ static uint32_t txDequeueAction(OSObject *target,
         accepted++;
     }
 
+    if (iv->txSubmitted != submittedBefore)
+        iv->txNonemptyCalls++;
     if (accepted) {
         /* Order descriptor stores before the doorbell MMIO write. */
         wmb();
@@ -730,6 +751,8 @@ static uint32_t txEnqueueAction(OSObject *target,
             break;
         packets[count++] = pkt;
     }
+    __atomic_fetch_add(&iv->txCompletionCalls[qidx], 1ULL, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&iv->txCompletionPackets[qidx], (uint64_t)count, __ATOMIC_RELAXED);
     return count;
 }
 
@@ -815,9 +838,16 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
     struct rtl8125_private *tp = &hw->linuxData;
     uint32_t nextClose = abort ? hw->txTailPtr0 : hw->rtl812xGetHwCloPtr(tp);
     uint32_t numDone = (nextClose - hw->txClosePtr0) & tp->MaxTxDescPtrMask;
+    const uint32_t reclaimed = numDone;
     bool didWork[kNumTxQueues] = {};
     bool any = false;
 
+    if (!abort) {
+        iv->txReclaimCalls++;
+        iv->txReclaimedDescriptors += reclaimed;
+        if (reclaimed > iv->txReclaimMaxBatch)
+            iv->txReclaimMaxBatch = reclaimed;
+    }
     hw->txClosePtr0 = nextClose;
 
     while (numDone-- > 0) {
@@ -840,11 +870,21 @@ static void txRingReclaim(RTL8127Driver *driver, bool abort)
                 iv->txPool->deallocatePacket(pkt);
             }
         }
-        OSAddAtomic(1, &hw->txNumFreeDesc);
         hw->txDirtyDescIndex = (index + 1) & kTxDescMask;
+    }
+    /* Publish all freed slots before notifying queues; retain seq_cst ordering. */
+    if (reclaimed) {
+        if (!abort)
+            iv->txReclaimNonempty++;
+        OSAddAtomic((SInt32)reclaimed, &hw->txNumFreeDesc);
     }
     if (any) {
         for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            if (didWork[i] && !abort) {
+                int32_t depth = fifoSampleDepth(&iv->txDoneFifo[i]);
+                if (depth >= 0 && (uint32_t)depth > iv->txDoneSampledMax[i])
+                    iv->txDoneSampledMax[i] = (uint32_t)depth;
+            }
             if (didWork[i] && iv->txCompQueues[i])
                 iv->txCompQueues[i]->requestEnqueue();
             if (iv->txSubQueues[i])
@@ -1094,15 +1134,41 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
                 iv->rxPkt[ri] ? "set" : "NULL");
         }
 
+        struct {
+            uint64_t calls[kNumTxQueues], packets[kNumTxQueues], badLen, nonempty;
+            uint64_t noLinkCalls, noLinkPackets, noSpaceCalls, noSpacePackets, offset;
+            uint64_t submitted, bytes, tso;
+        } txq;
         IOLockLock(iv->txLock);
-        Log("txq: calls %llu/%llu/%llu/%llu pkts %llu/%llu/%llu/%llu badlen %llu | refused link calls %llu pkts %llu space calls %llu pkts %llu | offered offset-nonzero %llu",
-            iv->txDequeueCalls[0], iv->txDequeueCalls[1], iv->txDequeueCalls[2], iv->txDequeueCalls[3],
-            iv->txPerQueue[0], iv->txPerQueue[1], iv->txPerQueue[2], iv->txPerQueue[3], iv->txBadLen,
-            iv->txNoLinkCalls, iv->txNoLinkPackets, iv->txNoSpaceCalls, iv->txNoSpacePackets,
-            iv->txNonzeroDataOffset);
+        memcpy(txq.calls, iv->txDequeueCalls, sizeof(txq.calls));
+        memcpy(txq.packets, iv->txPerQueue, sizeof(txq.packets));
+        txq.badLen = iv->txBadLen; txq.nonempty = iv->txNonemptyCalls;
+        txq.noLinkCalls = iv->txNoLinkCalls; txq.noLinkPackets = iv->txNoLinkPackets;
+        txq.noSpaceCalls = iv->txNoSpaceCalls; txq.noSpacePackets = iv->txNoSpacePackets;
+        txq.offset = iv->txNonzeroDataOffset;
+        txq.submitted = iv->txSubmitted; txq.bytes = iv->txBytes; txq.tso = iv->txTso;
         IOLockUnlock(iv->txLock);
+        Log("txq: calls %llu/%llu/%llu/%llu pkts %llu/%llu/%llu/%llu badlen %llu nonempty %llu | refused link calls %llu pkts %llu space calls %llu pkts %llu | offered offset-nonzero %llu",
+            txq.calls[0], txq.calls[1], txq.calls[2], txq.calls[3],
+            txq.packets[0], txq.packets[1], txq.packets[2], txq.packets[3], txq.badLen, txq.nonempty,
+            txq.noLinkCalls, txq.noLinkPackets, txq.noSpaceCalls, txq.noSpacePackets, txq.offset);
+        uint64_t completionCalls[kNumTxQueues], completionPackets[kNumTxQueues];
+        int32_t depths[kNumTxQueues];
+        for (uint32_t i = 0; i < kNumTxQueues; i++) {
+            completionCalls[i] = __atomic_load_n(&iv->txCompletionCalls[i], __ATOMIC_RELAXED);
+            completionPackets[i] = __atomic_load_n(&iv->txCompletionPackets[i], __ATOMIC_RELAXED);
+            depths[i] = fifoSampleDepth(&iv->txDoneFifo[i]);
+            if (depths[i] >= 0 && (uint32_t)depths[i] > iv->txDoneSampledMax[i])
+                iv->txDoneSampledMax[i] = (uint32_t)depths[i];
+        }
+        Log("tx completion: calls %llu/%llu/%llu/%llu returned %llu/%llu/%llu/%llu | reclaim calls %llu nonempty %llu desc %llu maxbatch %u | fifo sampled depth %d/%d/%d/%d max %u/%u/%u/%u",
+            completionCalls[0], completionCalls[1], completionCalls[2], completionCalls[3],
+            completionPackets[0], completionPackets[1], completionPackets[2], completionPackets[3],
+            iv->txReclaimCalls, iv->txReclaimNonempty, iv->txReclaimedDescriptors, iv->txReclaimMaxBatch,
+            depths[0], depths[1], depths[2], depths[3],
+            iv->txDoneSampledMax[0], iv->txDoneSampledMax[1], iv->txDoneSampledMax[2], iv->txDoneSampledMax[3]);
         Log("stats: link %u tx sub %llu done %llu tso %llu partial %llu/%llu bytes %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
-            iv->linkUp, iv->txSubmitted, iv->txCompleted, iv->txTso, iv->txPartial, iv->txPartialFail, iv->txBytes,
+            iv->linkUp, txq.submitted, iv->txCompleted, txq.tso, iv->txPartial, iv->txPartialFail, txq.bytes,
             __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
             hw->rtl812xGetHwCloPtr(tp),
             iv->rxDelivered, iv->rxErrors, iv->rxRefillShort,
