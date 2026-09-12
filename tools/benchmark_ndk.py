@@ -100,8 +100,11 @@ def main():
             for direction in ("tx", "rx"):
                 command = [args.iperf3, "-c", args.host, "--bind-dev", args.interface, "-p", str(args.port),
                            "-J", "-t", str(args.time), "-O", str(args.omit), "-P", str(streams),
-                           "--connect-timeout", "5000", "--rcv-timeout", "5000"]
-                jobs.append((rep, streams, direction, command + (["-R"] if direction == "rx" else [])))
+                           "--connect-timeout", "5000"]
+                # --rcv-timeout is only accepted by iperf3 in receiving mode (-R).
+                if direction == "rx":
+                    command += ["-R", "--rcv-timeout", "5000"]
+                jobs.append((rep, streams, direction, command))
     if args.dry_run:
         print(json.dumps({"before_and_after_each_run": snapshots, "runs": [job[3] for job in jobs]}, indent=2))
         return 0

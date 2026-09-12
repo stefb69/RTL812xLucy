@@ -44,9 +44,22 @@ Throughput, iperf3 to a Linux peer on the same 10G switch, MTU 1500:
 | RX, 8 streams | 9.39 Gbit/s | not measured |
 | TX, 8 streams | 4.5 Gbit/s | not measured |
 
-Line rate in both directions with no retransmissions, except eight or more
-parallel *transmit* streams, where per-packet overhead in the dext caps the
-aggregate (see Known limitations).
+With jumbo frames (`sudo ifconfig en10 mtu 9000`, peer and switch at 9000),
+dext 0.2.22:
+
+| Test | Dext |
+|---|---|
+| TX, 1 stream | 9.63 Gbit/s |
+| RX, 1 stream | 9.89 Gbit/s |
+| TX, 4 streams | 9.65 Gbit/s |
+| RX, 4 streams | 9.89 Gbit/s |
+| TX, 8 streams | 9.71 Gbit/s |
+| RX, 8 streams | 9.77 Gbit/s |
+
+Line rate in both directions with no retransmissions. The one exception is
+eight or more parallel *transmit* streams at MTU 1500, where per-packet
+overhead in the dext caps the aggregate (see Known limitations); with jumbo
+frames that case runs at line rate too.
 
 Two drivers live in this repository:
 
@@ -148,8 +161,8 @@ built from reports.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
   disabled for this chip).
 - The dext has no Wake on LAN.
-- Dext, many parallel transmit streams (8+): the aggregate drops to about
-  half the link rate. With that many streams TCP emits small TSO packets
+- Dext, many parallel transmit streams (8+) at MTU 1500: the aggregate drops
+  to about half the link rate (not at MTU 9000). With that many streams TCP emits small TSO packets
   (~3 KB) and the dext's per-packet cost saturates one core. Normal use,
   including four parallel streams, runs at line rate. Planned fix: the
   NetworkingDriverKit packet poller (polling under load, as the kext does).

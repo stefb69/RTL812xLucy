@@ -193,6 +193,16 @@ réception. Piste pour les 8+ flux : `IOUserNetworkPacketPoller` (polling sous
 charge, équivalent du mode polled du kext), voir aussi
 [ndk-performance-proposals.md](ndk-performance-proposals.md).
 
+**Jumbo (MTU 9000, 0.2.22)** : TX 1/4/8 flux 9,63 / 9,65 / 9,71 ; RX 1/4/8
+flux 9,89 / 9,89 / 9,77 ; 0 retransmission. Le cas 8 flux TX disparaît en
+jumbo (paquets TSO plus gros, moins de paquets/s). Piège NDK :
+`GetMaxTransferUnit` / `getMaxTransferUnit()` doivent renvoyer le MTU
+**maximum** supporté (le framework le lit une fois à l'enregistrement et le
+publie en `IOMaxPacketSize`) ; renvoyer le MTU courant verrouille
+l'interface à 1500 (`ifconfig mtu 9000` → EINVAL sans appel au dext).
+Note : le `ping` de macOS limite `-s` à 8184 ; tester le 8972 depuis le peer
+Linux (`ping -M do -s 8972`).
+
 ## Points ouverts
 
 - Débit : le modèle pool/queues NDK à 10 Gb/s est peu documenté publiquement —
