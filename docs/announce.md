@@ -261,6 +261,43 @@ https://github.com/stefb69/RTL812xLucy
 
 ---
 
+## 9. Mail to Realtek (NIC software team)
+
+Address from the r8127 Linux driver headers: nicfae@realtek.com. Low
+expectations (large company, generic team address), but it is the team that
+writes the driver the port comes from, and the three asks are concrete:
+reference or officialise the driver, an RJ45 sample or vendor contact, and
+datasheet/errata access. English only. Text sent on 12 Sept 2026:
+
+Subject: Open-source macOS (Apple Silicon) driver for RTL8127 / RTL8127ATF, ported from r8127
+
+Hello,
+
+I am writing to the NIC software team because your r8127 Linux driver headers give this address as the contact.
+
+I have written and released an open-source macOS driver for the RTL8127 / RTL8127ATF 10GbE controllers on Apple Silicon Macs. The hardware layer is ported from your GPL r8127 Linux driver (v11.x), so the driver is GPLv2 as well, with Realtek credited. It ships as a DriverKit system extension signed with an Apple Developer ID and notarized, so it installs on a standard Mac with full security enabled.
+
+Validated on a MacBook Pro (M5, macOS 26.6) with an RTL8127ATF (Lekuo DTB3F11, USB4/Thunderbolt to SFP+) over a DAC to a 10G switch: 9.4 Gbit/s in both directions at MTU 1500, 9.9 Gbit/s with 9000-byte jumbo frames, TCP segmentation offload (IPv4/IPv6), checksum offload, multicast, no errors.
+
+- Project: https://github.com/stefb69/RTL812xLucy
+- Release: https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta2
+
+Three things you might find useful, or be able to help with:
+
+1. Mac users are today told by reviewers and by board vendors that the RTL8127 does not work on macOS, and are steered to Marvell/Aquantia adapters. A working, signed driver now exists; if Realtek wants to reference it, or to ship an official one, I am happy to help either way.
+
+2. I only own the SFP+ (fiber/DAC) variant. The RTL8127A 10GBASE-T path is ported from r8127 but untested. A sample of an RJ45 board, or a contact at a board vendor, would let me validate it.
+
+3. If the RTL8127 datasheet, register reference or errata can be shared under NDA or otherwise, it would help me keep the driver correct as macOS evolves; today everything is derived from the r8127 source alone.
+
+Thank you for publishing the Linux driver under the GPL; this port would not exist without it.
+
+Best regards,
+Stephane Benoit
+https://github.com/stefb69/RTL812xLucy
+
+---
+
 ## Follow-up hygiene
 
 - Answer every issue and comment within a day for the first two weeks.
