@@ -2,8 +2,10 @@
 
 Open-source macOS driver for the Realtek **RTL8127** family of 10 Gigabit
 Ethernet controllers, the sub-$50 PCIe 10GbE NICs that shipped in late 2025.
-It runs on **Apple Silicon** (arm64e kext, DriverKit dext in progress) in a
-PCIe slot or a Thunderbolt enclosure, and reaches **10GbE line rate**.
+It runs on **Apple Silicon** in a PCIe slot or a Thunderbolt enclosure,
+reaches **10GbE line rate**, and ships as a signed, notarized DriverKit
+extension: install the package, approve the driver once, done. No recoveryOS,
+no security downgrade.
 
 This is a fork of [Mieze/RTL812xLucy](https://github.com/Mieze/RTL812xLucy)
 by Laura Müller. The RTL8127 hardware code is ported from Realtek's official
@@ -29,8 +31,7 @@ Apple Silicon Macs, including the SFP+ variant (RTL8127ATF) for DAC and fiber.
 
 | Platform | Status |
 |---|---|
-| Apple Silicon (M-series), macOS 26.5 | **Validated** on an M5 Mac, card in a Thunderbolt enclosure. |
-| Apple Silicon, macOS 26.6 | Re-validation in progress. |
+| Apple Silicon (M-series), macOS 26.5 / 26.6 | **Validated** on an M5 Mac, card in a Thunderbolt enclosure (dext on 26.6, kext on 26.5). |
 | Intel Mac / hackintosh (x86_64) | Builds universal; RTL8127 path not tested on Intel. |
 
 Throughput, iperf3 to a Linux peer on the same 10G switch, MTU 1500:
@@ -63,22 +64,24 @@ frames that case runs at line rate too.
 
 Two drivers live in this repository:
 
-- **`RTL812xLucy.kext`**: the kernel extension. This is the validated driver
-  with the numbers above. On Apple Silicon it requires Reduced Security while
-  unsigned (see below).
-- **`RTL8127Dext/`**: a DriverKit system extension (dext) plus the host app
-  that installs it. Signed with Developer ID and notarized, so it installs
-  on a Mac with **full security enabled**: open the app, approve the driver
-  once in System Settings, done. The app then shows whether a card is
-  detected, whether the driver is attached and the link state, in English,
-  French, German, Spanish, Italian, Japanese and Simplified Chinese. The
-  install flow is validated; the datapath has not yet been exercised on a
-  card with the dext (the kext has). Details in
+- **`RTL8127Dext/`**: the DriverKit system extension (dext) plus the host
+  app that installs it. This is the driver to use. Signed with Developer ID
+  and notarized, so it installs on a Mac with **full security enabled**:
+  open the app, approve the driver once in System Settings, done. The app
+  shows whether a card is detected, whether the driver is attached and the
+  link state, in English, French, German, Spanish, Italian, Japanese and
+  Simplified Chinese. TCP segmentation offload, checksum offload, jumbo
+  frames up to 9000 and multicast are all validated on hardware. Details in
   [docs/DEXT-PORT.md](docs/DEXT-PORT.md).
+- **`RTL812xLucy.kext`**: the original in-kernel driver, where the RTL8127
+  port was first brought up (June 2026). It is unsigned, so on Apple Silicon
+  it needs Reduced Security and `csrutil disable`. Releases no longer ship it
+  now that the dext matches its throughput; build it from source if you need
+  it (Intel Macs, hackintosh, or the upstream pull request).
 
 ## Install (dext, recommended)
 
-Download `RTL8127-*-notarized.pkg` from
+Download `RTL8127-*.pkg` from
 [Releases](https://github.com/stefb69/RTL812xLucy/releases) and run it. It
 puts **RTL8127App** in Applications and opens it. The app installs the
 driver by itself; macOS asks you to allow it once and the app opens the
@@ -87,15 +90,20 @@ Driver Extensions: turn on RTL8127App). No recoveryOS, no security
 changes. Plug in the card and the app shows the link state; configure the
 interface in System Settings, Network like any Ethernet port.
 
+Jumbo frames: `sudo ifconfig en10 mtu 9000` (use your interface name), or
+set the MTU in System Settings, Network, Ethernet, Details, Hardware. The
+peer and the switch must be at 9000 too.
+
 To remove the driver, open the app and click "Remove driver". Then delete
 the app.
 
 ## Install (kext, advanced)
 
-The kext is the driver that has been validated at line rate on hardware.
-Download the latest `RTL812xLucy-*.kext.zip` from
-[Releases](https://github.com/stefb69/RTL812xLucy/releases), or build it
-(see below). The kext is unsigned, so macOS must be allowed to load it:
+Only for people who need the in-kernel driver (Intel Macs, hackintosh, or
+to reproduce the upstream pull request). Build it from source (see below),
+or take the `RTL812xLucy-*.kext.zip` from the beta1/beta2 releases. Do not
+install the kext and the dext together: they match the same PCI device. The
+kext is unsigned, so macOS must be allowed to load it:
 
 1. Shut down, then hold the power button until "Loading startup options"
    appears. Open **Options** to boot into recoveryOS.
@@ -145,7 +153,7 @@ SPI that Apple strips from the public SDK; regenerate them with
 
 | Mac | macOS | Card | Enclosure | Link |
 |---|---|---|---|---|
-| M5 | 26.5 | RTL8127ATF (SFP+) | Thunderbolt PCIe enclosure | 10G, SFP+ DAC to a 10G switch |
+| M5 | 26.5 (kext), 26.6 (dext 0.2.22) | RTL8127ATF (SFP+) | Thunderbolt PCIe enclosure | 10G, SFP+ DAC to a 10G switch, MTU 1500 and 9000 |
 
 If it works (or does not) for you, please open a
 [hardware report](https://github.com/stefb69/RTL812xLucy/issues/new?template=hardware-report.yml)
@@ -154,8 +162,8 @@ built from reports.
 
 ## Known limitations
 
-- The kext is unsigned: Reduced Security and `csrutil disable` are required
-  on Apple Silicon. Use the signed dext unless you need the kext.
+- The kext (not shipped anymore) is unsigned: Reduced Security and
+  `csrutil disable` are required on Apple Silicon. Use the signed dext.
 - The link medium is reported as 10GBase-T even over SFP+ DAC or fiber.
   macOS has no medium constant for those; it is a display issue only.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
@@ -175,9 +183,8 @@ built from reports.
 - Testing on **RTL8127A / RJ45** cards (10GBASE-T). The copper path is
   ported but no one has run it yet.
 - Reports from other Thunderbolt enclosures and from Mac Pro PCIe slots.
-- Testing on macOS 26.6 and later.
-- Dext reports: the signed dext installs cleanly, but nobody has pushed
-  10G traffic through it yet. If you have a card, please try it and report.
+- Reports from other Macs (M1 to M4, Mac Pro, Mac Studio) and macOS
+  versions: the dext has only been run on one M5 so far.
 
 ## Diagnostics
 

@@ -1,46 +1,68 @@
-# Release notes draft: next tag
+# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.22, 12 Sept 2026)
 
-Tag proposal: `v1.1.2-rtl8127.beta3` or `v1.2.0-rtl8127` once the dext has
-moved 10G traffic on a card. beta2 (10 Sept 2026) shipped the notarized pkg/zip. The CI workflow builds the kext,
-dext, host app and installer .pkg and attaches them to the release; paste
-this text as the release body (it replaces the generic body in build.yml for
-this release).
+Releases are published by hand with the notarized installer built by
+`packaging/sign-and-notarize.sh`; CI only builds and checks. The text below
+is the release body.
 
 ---
 
-RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs.
+RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, as a signed and
+notarized DriverKit extension. Download `RTL8127-0.2.22.pkg`, run it, approve
+the driver once in System Settings, plug the card in. No recoveryOS, no
+Reduced Security, no `csrutil` changes.
 
-**What works**
+**Validated on hardware** (M5 Mac, macOS 26.6, RTL8127ATF SFP+ in a
+Thunderbolt enclosure, DAC to a 10G switch, Linux iperf3 peer):
 
-- RTL8127ATF (SFP+): validated on an M5 Mac, macOS <VERSION>, Thunderbolt
-  PCIe enclosure, SFP+ DAC to a 10G switch. iperf3 single stream
-  ~9.35 Gbit/s TX / ~9.19 Gbit/s RX.
-- RTL8125 / RTL8126 unchanged from upstream RTL812xLucy 1.1.2.
+| Test | MTU 1500 | MTU 9000 |
+|---|---|---|
+| TX, 1 stream | 9.40 Gbit/s | 9.63 Gbit/s |
+| RX, 1 stream | 9.38 Gbit/s | 9.89 Gbit/s |
+| TX, 4 streams | 9.22 Gbit/s | 9.65 Gbit/s |
+| RX, 4 streams | 9.39 Gbit/s | 9.89 Gbit/s |
+| TX, 8 streams | 4.5 Gbit/s | 9.71 Gbit/s |
+| RX, 8 streams | 9.39 Gbit/s | 9.77 Gbit/s |
 
-**Changes since beta2**
+DHCP, IPv4/IPv6, multicast (mDNS/Bonjour), Network.framework and BSD socket
+traffic, TCP segmentation offload (IPv4/IPv6), checksum offload, jumbo frames
+up to 9000, all exercised on the card.
 
-- <kext fixes for macOS 26.6, if any>
-- Dext: TCP segmentation offload (IPv4/IPv6), jumbo frames up to 9000,
-  interrupt mitigation ported from the kext. <hardware status>
-- Kext: RX length field read on 14 bits; frames over 8191 bytes (jumbo on
-  Apple Silicon) were truncated.
-- <if the dext reached line rate on hardware: this is the last release that
-  ships the kext; it stays in the tree as the upstream PR vehicle.>
-- README rewritten with step-by-step Apple Silicon install instructions,
-  tested-setups table and known limitations.
-- Issue templates: hardware reports are now the way to tell us what works.
+**What is in the package**
 
-**Assets**
+- `RTL8127App.app` (Applications): installs and removes the driver, shows
+  card detection, driver state and link, in English, French, German, Spanish,
+  Italian, Japanese and Simplified Chinese.
+- `net.wizzz.RTL8127Dext.dext` inside it: the DriverKit driver, Developer ID
+  signed, notarized, stapled.
 
-- `RTL812xLucy-*.kext.zip`: the kext, universal x86_64 + arm64e. Unsigned:
-  Reduced Security + user kext management + `csrutil disable` on Apple
-  Silicon. Install steps in the README.
-- `RTL8127App-*.app.zip` / `RTL8127-*.pkg`: host app embedding the DriverKit
-  extension. <signed / unsigned, loads only with developer mode>
-- `RTL8127Dext-*.dext.zip`: the standalone dext + dSYM.
+**Changes since beta1** (kext-only, June 2026)
+
+- DriverKit port of the RTL8127 driver: hardware layer shared verbatim with
+  the kext, NetworkingDriverKit datapath with four TX queues (service
+  classes), TSO4/6, checksum offload, multicast hash filter, kext-style
+  interrupt mitigation, hardware statistics.
+- Signed with Apple's DriverKit entitlements (PCI transport, networking
+  family), notarized installer package.
+- Kext: RX length field read on 14 bits (frames over 8191 bytes were
+  truncated). The kext is no longer shipped in releases; build it from
+  source if you need it.
+- README rewritten as an install guide, issue templates (hardware reports),
+  benchmark tool in `tools/`.
 
 **Known limitations**
 
+- Eight or more parallel TCP streams sending from the Mac at MTU 1500 top
+  out around 4.5 Gbit/s (per-packet cost in the dext). Not an issue at MTU
+  9000 or with up to four streams.
 - Link medium displayed as 10GBase-T over SFP+/DAC (cosmetic).
 - RTL8127A (RJ45) path ported but untested. Reports welcome.
-- Dext: no Wake on LAN.
+- No Wake on LAN. tcpdump only sees kernel-path traffic (the BPF tap API
+  panics macOS 26 inside IOSkywalkFamily, so it is not used).
+
+**Upgrading from an earlier 0.2.x package**: run the pkg; if the card does
+not come back, unplug and replug it (the previous driver instance can hold
+the device until then).
+
+Checksums (SHA-256):
+
+- `RTL8127-0.2.22.pkg`: 2f81bd50359b250894c880835bbaeb4e871896f83b6315189f1cbc3ddb4edb21

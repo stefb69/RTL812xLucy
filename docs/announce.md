@@ -1,9 +1,8 @@
 # Announcement drafts
 
 Ready-to-post texts for the launch. Nothing here is published automatically.
-Post only after the validation pass (kext on macOS 26.6, dext on hardware) and
-after a fresh tagged release exists. Replace `<TAG>` with the release tag and
-`<DEXT STATUS>` with one of the two sentences at the bottom.
+Validation pass done on 12 Sept 2026 (dext 0.2.22 on hardware, line rate,
+jumbo). Release tag: `v1.1.2-rtl8127.beta2` (dext 0.2.22). Post once that release is public.
 
 Order: message to Jeff Geerling and comment on his post first, then Show HN
 and r/homelab the same morning (US weekday morning), then the other
@@ -28,25 +27,32 @@ Mac driver. So I ported it.
 
 What it is: a fork of Mieze's RTL812xLucy macOS driver (the well-known
 RTL8125/8126 kext from the hackintosh world) with the RTL8127 hardware layer
-ported from Realtek's GPL r8127 Linux driver, plus an arm64e build so it runs
-on Apple Silicon in a Thunderbolt enclosure or a Mac Pro slot. It's validated
-on an M5 Mac with the SFP+ variant (RTL8127ATF) over a DAC to a 10G switch:
-iperf3 single stream ~9.35 Gbit/s TX / ~9.19 Gbit/s RX, so line rate both ways.
+ported from Realtek's GPL r8127 Linux driver, then moved into a DriverKit
+system extension (dext). It's signed with Developer ID and notarized, so it
+installs on a stock Apple Silicon Mac with full security on: run the pkg,
+approve the driver once in System Settings, plug the card in. Validated on an
+M5 Mac with the SFP+ variant (RTL8127ATF) in a Thunderbolt enclosure, DAC to a
+10G switch: iperf3 9.4 Gbit/s TX / 9.4 RX at MTU 1500, 9.6 / 9.9 with jumbo
+frames, with TSO and checksum offload. Line rate both ways.
 
-The interesting part was DMA on Apple Silicon. Apple's DART IOMMU rejects the
-raw physical addresses IOMemoryDescriptor::getPhysicalSegment() hands you, the
-system mapper is not applied by default the way it is on Intel, and every DMA
-buffer has to go through an IODMACommand bound to the device's mapper or you
-get a storm of "STE invalid" faults and a dead datapath. There's also the fact
-that the polled-mode networking SPI the driver relies on is stripped from the
-public SDK, so the repo carries a generated header overlay that re-inserts the
-vtable slots. Details are in the commit history if you like that sort of thing.
+Two interesting parts. First, DMA on Apple Silicon for the original kext:
+Apple's DART IOMMU rejects the raw physical addresses
+IOMemoryDescriptor::getPhysicalSegment() hands you, the system mapper is not
+applied by default the way it is on Intel, and every DMA buffer has to go
+through an IODMACommand bound to the device's mapper or you get a storm of
+"STE invalid" faults and a dead datapath. Second, NetworkingDriverKit, which
+has almost no public documentation beyond the headers: the Skywalk stack hands
+you TX packets whose payload starts at a 2-byte offset inside the buffer
+(Network.framework flows only, BSD sockets don't), the BPF tap API panics the
+kernel on macOS 26, and the "max transfer unit" callback is the maximum, not
+the current MTU. All of it is written up in docs/DEXT-PORT.md.
 
-Caveats, honestly: the kext is unsigned, so on Apple Silicon you need Reduced
-Security and csrutil disable. <DEXT STATUS> The RJ45 variant (RTL8127A) uses
-the same silicon and the copper path is ported, but I only own the SFP+ card,
-so reports from RJ45 owners are very welcome. There's an upstream PR open
-against Mieze's repo; the fork is maintained on its own until it lands.
+Caveats, honestly: the RJ45 variant (RTL8127A) uses the same silicon and the
+copper path is ported, but I only own the SFP+ card, so reports from RJ45
+owners are very welcome. Eight or more parallel TCP streams *sending* from the
+Mac at MTU 1500 top out around 4.5 Gbit/s (per-packet cost in the dext, fine
+with jumbo frames); normal use is line rate. There's an upstream PR open
+against Mieze's repo for the kext part; the fork is maintained on its own.
 
 If you have a 10G NAS and a Mac and didn't want to pay $200 for an Aquantia
 Thunderbolt adapter, this is for you. Happy to answer questions.
@@ -59,8 +65,10 @@ Thunderbolt adapter, this is for you. Happy to answer questions.
 
 **Body:**
 
-TL;DR: open-source driver, works on Apple Silicon Macs with an RTL8127 card in
-a Thunderbolt enclosure, 9.3 Gbit/s each way in iperf3, GPLv2.
+TL;DR: open-source, signed driver, installs like a normal app (no SIP or
+security changes), works on Apple Silicon Macs with an RTL8127 card in a
+Thunderbolt enclosure, 9.4 Gbit/s each way in iperf3 (9.9 with jumbo
+frames), GPLv2.
 https://github.com/stefb69/RTL812xLucy
 
 Background: the RTL8127 is the cheap 10GbE PCIe chip everyone's been putting
@@ -70,22 +78,25 @@ Meanwhile the "supported" way to get 10G on a Mac is a $150-250 Thunderbolt
 adapter.
 
 I ported Realtek's Linux r8127 driver into Mieze's RTL812xLucy macOS driver
-(the RTL8125/8126 one) and built it for arm64e. Tested on an M5 Mac, macOS
-26.5, card in a Thunderbolt PCIe enclosure, SFP+ DAC to a 10G switch. DHCP,
-stable link, multi-GB transfers both directions, zero errors.
+(the RTL8125/8126 one), then moved it into a DriverKit extension so it can be
+signed and installed on a stock Mac. Tested on an M5 Mac, macOS 26.6, card in
+a Thunderbolt PCIe enclosure, SFP+ DAC to a 10G switch: iperf3 9.4 Gbit/s TX
+and RX at MTU 1500, 9.6 / 9.9 with jumbo frames, TSO and checksum offload
+on, zero errors.
 
 What you need to know before trying it:
 
-- It's a kext and it's unsigned, so you need Reduced Security + "allow user
-  kernel extensions" from recoveryOS, plus `csrutil disable`. Step-by-step in
-  the README. <DEXT STATUS>
+- It's a DriverKit system extension, signed with Developer ID and notarized:
+  run the pkg, approve the driver once in System Settings, plug the card in.
+  No recoveryOS, no Reduced Security, no `csrutil disable`. (The original
+  unsigned kext is still in the repo for Intel Macs and hackintoshes.)
 - I own the SFP+ variant (RTL8127ATF). The RJ45 one (RTL8127A) should work,
   the copper path is ported, but nobody has tested it yet. If you have one,
   please open a hardware report on the repo, working or not.
 - macOS shows the link as "10GBase-T" even over DAC. Cosmetic.
 - Thunderbolt enclosure reports welcome; I've only tried one.
 
-Release zip is on the GitHub Releases page (<TAG>). Issues are open.
+The installer pkg is on the GitHub Releases page (v1.1.2-rtl8127.beta2). Issues are open.
 
 ---
 
@@ -95,8 +106,9 @@ For anyone looking for macOS support for the RTL8127 / RTL8127ATF: there's now
 an open-source driver for Apple Silicon Macs, a fork of Mieze's RTL812xLucy
 with the r8127 Linux hardware code ported over and an arm64e build. Validated
 on an M5 in a Thunderbolt enclosure with the SFP+ variant, iperf3 ~9.3 Gbit/s
-both ways. Unsigned kext for now (Reduced Security needed), <DEXT STATUS>
-RJ45 (RTL8127A) testers wanted. https://github.com/stefb69/RTL812xLucy
+both ways. It's a signed, notarized DriverKit extension, so it installs
+with full security on (pkg, approve once, done). RJ45 (RTL8127A) testers
+wanted. https://github.com/stefb69/RTL812xLucy
 
 ---
 
@@ -106,10 +118,11 @@ Someone linked the repo here already, so a short follow-up from the author:
 
 Author of that RTL8127 macOS driver here. Since the post went up it's been
 validated on real hardware: M5 Mac, RTL8127ATF (SFP+) in a Thunderbolt
-enclosure, iperf3 ~9.35 Gbit/s TX / ~9.19 Gbit/s RX, so the PCIe RTL8127 does
-reach line rate on macOS, unlike the USB RTL8159 stuck in CDC mode. Caveats:
-unsigned kext, so Reduced Security on Apple Silicon for now, <DEXT STATUS> and
-the RJ45 variant hasn't been tested yet (I only have the SFP+ card).
+enclosure, iperf3 9.4 Gbit/s each way (9.9 with jumbo frames), so the PCIe
+RTL8127 does reach line rate on macOS, unlike the USB RTL8159 stuck in CDC
+mode. It's now a signed, notarized DriverKit extension: pkg installer, full
+security stays on. Caveat: the RJ45 variant hasn't been tested yet (I only
+have the SFP+ card).
 https://github.com/stefb69/RTL812xLucy
 
 ---
@@ -127,12 +140,13 @@ Linux code ported over and an arm64e build, so it runs on Apple Silicon Macs
 in a Thunderbolt enclosure or a Mac Pro slot.
 
 Validated on an M5 Mac with the SFP+ variant (RTL8127ATF) over a DAC to a
-10G switch: ~9.35 Gbit/s TX / ~9.19 Gbit/s RX in iperf3, single stream. So a
-$40 card plus an enclosure does line-rate 10G on a Mac.
+10G switch: 9.4 Gbit/s each way in iperf3, 9.9 with jumbo frames. So a $40
+card plus an enclosure does line-rate 10G on a Mac. It ships as a signed,
+notarized DriverKit extension (pkg installer, approve once in System
+Settings), so there's no SIP or Reduced Security dance.
 
-Honest caveats: it's an unsigned kext, so Reduced Security is required on
-Apple Silicon for now. <DEXT STATUS> And I've only got the SFP+ card, so the
-RJ45 RTL8127A is untested (same silicon, copper path ported).
+Honest caveat: I've only got the SFP+ card, so the RJ45 RTL8127A is untested
+(same silicon, copper path ported).
 
 Repo: https://github.com/stefb69/RTL812xLucy
 
@@ -153,8 +167,8 @@ Apple Silicon: https://github.com/stefb69/RTL812xLucy (fork of Mieze's
 RTL812xLucy, r8127 hardware code ported, arm64e build). Validated with the
 SFP+ RTL8127ATF in a Thunderbolt enclosure at ~9.3 Gbit/s both ways. The RJ45
 RTL8127A path is ported but untested since I only own the SFP+ card; given
-your test bench, a report from you would be very valuable. Unsigned kext for
-now (Reduced Security), <DEXT STATUS>
+your test bench, a report from you would be very valuable. It's a signed
+DriverKit extension, so it installs with full security on.
 
 ---
 
@@ -170,20 +184,6 @@ tracker are at https://github.com/stefb69/RTL812xLucy. Thanks Mieze for the
 driver this is built on.
 
 ---
-
-## `<DEXT STATUS>` sentences
-
-Pick one depending on where the DriverKit dext stands at launch:
-
-- Signed dext available: "There's also a signed DriverKit version (dext) that
-  installs like a normal app with full security enabled; that's the one most
-  people should use."
-- Dext tested but unsigned: "A DriverKit version that will install with full
-  security enabled is working and waiting on Apple's entitlement approval to
-  be signed."
-- Dext not yet tested: "A DriverKit version that will install with full
-  security enabled is written and waiting on Apple's entitlement approval
-  before it can be tested and signed."
 
 ## Follow-up hygiene
 

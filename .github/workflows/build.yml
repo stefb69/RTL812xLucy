@@ -1,4 +1,4 @@
-name: Build kext + dext
+name: Build kext + dext (CI check)
 
 permissions:
   contents: write
@@ -104,27 +104,7 @@ jobs:
           name: RTL8127-installer
           path: dist/*.pkg
 
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.zip
-            dist/*.pkg
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-          body: |
-            Unsigned development build for the Realtek RTL812x family
-            (RTL8125 2.5G, RTL8126 5G, RTL8127 / RTL8127ATF 10G).
-
-            - `*.kext.zip` — RTL812xLucy kext (universal x86_64 + arm64e).
-              Loading on Apple Silicon needs Reduced Security + user kext
-              management, plus `csrutil disable` while unsigned. See the README.
-            - `*.app.zip` — host app embedding the RTL8127Dext DriverKit
-              extension. The dext is unsigned here, so it loads only with the
-              granted DriverKit entitlements, or for development with
-              `systemextensionsctl developer on` + `amfi_get_out_of_my_way=1`.
-            - `*.dext.zip` — the standalone DriverKit extension + dSYM.
-            - `*.pkg` — installer that drops the host app into /Applications.
-              Unsigned: install needs Gatekeeper approval and the dext still
-              requires the granted entitlements (or developer mode) to load.
+      # Tagged releases are published by hand with the notarized installer
+      # (packaging/sign-and-notarize.sh); CI cannot sign, and the unsigned
+      # kext is no longer shipped. The artifacts above stay available for
+      # every build.
