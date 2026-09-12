@@ -5,8 +5,8 @@ Apple's DriverKit team should hear about, written up ready to paste. File
 them in Feedback Assistant (feedbackassistant.apple.com, or the app), area
 **Developer Technologies & SDKs**, topic **DriverKit** (pick "Incorrect or
 unexpected behavior" for the first, "Documentation" for the other two). Once
-filed, put the FB numbers back here and in the forum post below, and link this
-file from the README's Known limitations.
+filed on 12 Sept 2026: FB24751759 (panic, filed under macOS > unexpected
+restart), FB24751820 (TX data offset) and FB24751838 (maximum MTU).
 
 Environment common to all three: MacBook Pro (M5), macOS 26.6.2 (25G83),
 Xcode 26.x, DriverKit SDK 25.5, NetworkingDriverKit `IOUserNetworkEthernet`
@@ -17,7 +17,7 @@ Source: https://github.com/stefb69/RTL812xLucy (directory `RTL8127Dext/`).
 
 ---
 
-## FB 1: Kernel panic in IOSkywalkFamily when a NetworkingDriverKit dext that called bpfAttach() is replaced
+## FB24751759: Kernel panic in IOSkywalkFamily when a NetworkingDriverKit dext that called bpfAttach() is replaced
 
 **Title:** IOSkywalkFamily kernel panic (null dereference) on dext replacement after IOUserNetworkEthernet::bpfAttach()
 
@@ -78,7 +78,7 @@ link to the source at `fa48a8c`.
 
 ---
 
-## FB 2: Documentation: TX packets from native Skywalk flows carry a non-zero data offset that the address getters do not include
+## FB24751820: Documentation: TX packets from native Skywalk flows carry a non-zero data offset that the address getters do not include
 
 **Title:** IOUserNetworkPacket::getDataVirtualAddress()/getDataIOVirtualAddress() return the buffer base; native-flow TX packets have a 2-byte data offset that is nowhere documented
 
@@ -131,7 +131,7 @@ works. Reference fix: commit `89e93d0` and
 
 ---
 
-## FB 3: Documentation: GetMaxTransferUnit()/getMaxTransferUnit() is the maximum MTU, not the current one
+## FB24751838: Documentation: GetMaxTransferUnit()/getMaxTransferUnit() is the maximum MTU, not the current one
 
 **Title:** IOUserNetworkEthernet::getMaxTransferUnit() semantics undocumented: it is the maximum supported MTU and locks the interface MTU
 
@@ -170,7 +170,7 @@ current value.
 ## Apple Developer Forums post
 
 **Forum:** Developer Forums, tags **DriverKit**, **NetworkingDriverKit**,
-**System Extensions**. Post after the FB numbers exist; replace `FBxxxxxxxx`.
+**System Extensions** (forum area: App & System Services > Drivers).
 
 **Title:** Lessons learned shipping an open-source NetworkingDriverKit NIC driver (Realtek RTL8127, 10GbE)
 
@@ -183,10 +183,10 @@ line rate (9.4 Gbit/s each way at MTU 1500, 9.9 with jumbo frames) with
 TSO, checksum offload and four TX queues by service class. Since there are
 very few public NetworkingDriverKit drivers to learn from, here is what
 cost me the most time, in case it saves someone else a week. Three of these
-are filed as feedback.
+are filed as feedback (FB numbers below).
 
 1. **TX packets from native Skywalk flows have a 2-byte data offset**
-   (FBxxxxxxxx). `getDataVirtualAddress()` / `getDataIOVirtualAddress()`
+   (FB24751820). `getDataVirtualAddress()` / `getDataIOVirtualAddress()`
    return the buffer base; the frame starts at `getDataOff()`. BSD-path
    packets (ping, curl, ssh, DHCP) have offset 0, Network.framework flows
    (Safari, URLSession, App Store, codesign --timestamp) have offset 2. If
@@ -194,11 +194,11 @@ are filed as feedback.
    which sits in SYN_SENT. The headers don't mention it.
 
 2. **`getMaxTransferUnit()` is the maximum MTU, not the current one**
-   (FBxxxxxxxx). It is read once at `registerEthernetInterface()` and
+   (FB24751838). It is read once at `registerEthernetInterface()` and
    becomes the hard ceiling for `ifconfig mtu`; return your current 1500
    and jumbo frames fail with EINVAL before your dext is called.
 
-3. **Don't call `bpfAttach()` on macOS 26.6** (FBxxxxxxxx). It worked once,
+3. **Don't call `bpfAttach()` on macOS 26.6** (FB24751759). It worked once,
    then panicked the kernel inside IOSkywalkFamily when the dext was
    replaced while tcpdump was attached. Without it, tcpdump on your
    interface only sees host-path frames, not native flows, so debugging

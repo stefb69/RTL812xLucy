@@ -177,7 +177,8 @@ built from reports.
 - tcpdump on the dext interface only sees frames handled by the kernel's
   own path, not Network.framework flows: the BPF tap API panics macOS 26.6
   inside IOSkywalkFamily, so the driver does not use it. This and two
-  NetworkingDriverKit documentation gaps are reported to Apple, see
+  NetworkingDriverKit documentation gaps are reported to Apple (FB24751759,
+  FB24751820, FB24751838), see
   [docs/apple-feedback.md](docs/apple-feedback.md).
 
 ## Help wanted
