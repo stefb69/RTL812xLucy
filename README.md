@@ -33,15 +33,20 @@ Apple Silicon Macs, including the SFP+ variant (RTL8127ATF) for DAC and fiber.
 | Apple Silicon, macOS 26.6 | Re-validation in progress. |
 | Intel Mac / hackintosh (x86_64) | Builds universal; RTL8127 path not tested on Intel. |
 
-Throughput, kext, iperf3 single TCP stream to a Linux peer on the same 10G
-switch:
+Throughput, iperf3 to a Linux peer on the same 10G switch, MTU 1500:
 
-| Direction | Throughput |
-|---|---|
-| TX (Mac to peer) | ~9.35 Gbit/s |
-| RX (peer to Mac) | ~9.19 Gbit/s |
+| Test | Dext (recommended) | Kext |
+|---|---|---|
+| TX, 1 stream | 9.40 Gbit/s | 9.35 Gbit/s |
+| RX, 1 stream | 9.38 Gbit/s | 9.19 Gbit/s |
+| TX, 4 streams | 9.22 Gbit/s | not measured |
+| RX, 4 streams | 9.39 Gbit/s | not measured |
+| RX, 8 streams | 9.39 Gbit/s | not measured |
+| TX, 8 streams | 4.5 Gbit/s | not measured |
 
-That is 10GbE line rate in both directions, with negligible retransmissions.
+Line rate in both directions with no retransmissions, except eight or more
+parallel *transmit* streams, where per-packet overhead in the dext caps the
+aggregate (see Known limitations).
 
 Two drivers live in this repository:
 
@@ -143,6 +148,14 @@ built from reports.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
   disabled for this chip).
 - The dext has no Wake on LAN.
+- Dext, many parallel transmit streams (8+): the aggregate drops to about
+  half the link rate. With that many streams TCP emits small TSO packets
+  (~3 KB) and the dext's per-packet cost saturates one core. Normal use,
+  including four parallel streams, runs at line rate. Planned fix: the
+  NetworkingDriverKit packet poller (polling under load, as the kext does).
+- tcpdump on the dext interface only sees frames handled by the kernel's
+  own path, not Network.framework flows: the BPF tap API panics macOS 26.6
+  inside IOSkywalkFamily, so the driver does not use it.
 
 ## Help wanted
 

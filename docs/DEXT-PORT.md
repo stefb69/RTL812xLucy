@@ -182,6 +182,17 @@ Pièges NDK rencontrés, tous corrigés (voir l'historique git et
   l'émetteur `<bundle>.dext` ; chaînes en `%{public}s` ; les messages `DK:` du
   noyau ne sont pas conservés (`log stream` en direct).
 
+## Performance mesurée (12 sept. 2026, 0.2.21, peer Linux, MTU 1500)
+
+TX 1 flux 9,40 ; RX 1 flux 9,38 ; TX 4 flux 9,22 ; RX 4/8 flux 9,39 ;
+**TX 8 flux 4,5** (paquets TSO de ~3 Ko sous ACK-clocking à 8 flux, ~160k
+paquets/s, dext à 88 % CPU : coût par paquet du chemin NDK, RPC par lot +
+copie). Profondeur de file TX plafonnée à 4 Mo en vol
+(`kTxInflightBytesLimit`) : un plafond en paquets bloquait les ACK en
+réception. Piste pour les 8+ flux : `IOUserNetworkPacketPoller` (polling sous
+charge, équivalent du mode polled du kext), voir aussi
+[ndk-performance-proposals.md](ndk-performance-proposals.md).
+
 ## Points ouverts
 
 - Débit : le modèle pool/queues NDK à 10 Gb/s est peu documenté publiquement —
