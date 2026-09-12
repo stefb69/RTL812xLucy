@@ -1807,9 +1807,16 @@ IOReturn RTL8127Driver::setMaxTransferUnit(uint32_t mtu)
     return kIOReturnSuccess;
 }
 
+/*
+ * Despite the name this is the MAXIMUM the interface supports, not the
+ * current MTU: IOSkywalkFamily queries it once at registration and publishes
+ * it as IOMaxPacketSize / IOMaxTransferUnit, and "ifconfig enX mtu N" is
+ * refused with EINVAL above that value without ever reaching the dext.
+ * Returning the current MTU here (1500) locked the interface at 1500.
+ */
 uint32_t RTL8127Driver::getMaxTransferUnit()
 {
-    return ivars->mtu;
+    return kMaxMtu;
 }
 
 uint32_t RTL8127Driver::getHardwareAssists()
@@ -1894,7 +1901,7 @@ kern_return_t IMPL(RTL8127Driver, GetMaxTransferUnit)
 {
     if (!mtu)
         return kIOReturnBadArgument;
-    *mtu = ivars->mtu;
+    *mtu = kMaxMtu;
     return kIOReturnSuccess;
 }
 
