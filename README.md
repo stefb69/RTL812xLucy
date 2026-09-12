@@ -176,7 +176,9 @@ built from reports.
   NetworkingDriverKit packet poller (polling under load, as the kext does).
 - tcpdump on the dext interface only sees frames handled by the kernel's
   own path, not Network.framework flows: the BPF tap API panics macOS 26.6
-  inside IOSkywalkFamily, so the driver does not use it.
+  inside IOSkywalkFamily, so the driver does not use it. This and two
+  NetworkingDriverKit documentation gaps are reported to Apple, see
+  [docs/apple-feedback.md](docs/apple-feedback.md).
 
 ## Help wanted
 
