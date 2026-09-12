@@ -185,6 +185,82 @@ driver this is built on.
 
 ---
 
+---
+
+## 8. Feedback to the card's manufacturer (Lekuo / 深圳市乐扩多媒体有限公司)
+
+The tested unit is the Lekuo **DTB3F11**, a USB4/Thunderbolt to 10G SFP+
+adapter built around the RTL8127ATF
+(https://www.lekuo.com/product_view.php?id=665). Their product FAQ says
+"Mac users should purchase with caution ... macOS does not currently have
+official drivers for the Realtek RTL8127 chipset". Contact form:
+https://www.lekuo.com/list.php?pid=4&ty=28 (name, email, message), or
+support@lekuo.com / sales@lekuo.com. Send both languages in one message.
+
+**English**
+
+Subject: macOS driver now available for your DTB3F11 (RTL8127ATF) adapter
+
+Hello,
+
+I own your DTB3F11 USB4 to 10G SFP+ adapter and use it on an Apple Silicon
+MacBook Pro (M5, macOS 26.6). Your product FAQ currently tells Mac users to
+"purchase with caution" because macOS has no driver for the RTL8127. That
+is no longer the case: I have written and released an open-source macOS
+driver for the RTL8127 / RTL8127ATF, and your DTB3F11 is the exact unit it
+was developed and validated on.
+
+- It is a DriverKit system extension, signed with an Apple Developer ID and
+  notarized, so it installs on a standard Mac with full security enabled
+  (run the installer, approve the driver once in System Settings).
+- Measured with your adapter over a DAC cable: 9.4 Gbit/s in both
+  directions at MTU 1500, 9.9 Gbit/s with 9000-byte jumbo frames, with TCP
+  segmentation and checksum offload.
+- Project page: https://github.com/stefb69/RTL812xLucy
+- Installer: https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta2
+
+Two suggestions: update the Mac answer in the FAQ, and add the driver link
+to the product page's Driver Download section as "macOS (open-source
+third-party driver)". It is GPLv2, free, and you are welcome to link or
+mirror it. If you would like to test it on your other RTL8127 products
+(the dual-port DTB3F22 or your PCIe cards), I am happy to help, and a
+sample of the RJ45 variant would let me validate that path too.
+
+Best regards,
+Stéphane Benoit
+https://github.com/stefb69/RTL812xLucy
+
+**中文**
+
+主题：贵司 DTB3F11（RTL8127ATF）网卡现已有 macOS 驱动
+
+您好：
+
+我购买了贵司的 DTB3F11 USB4 转 10G SFP+ 网卡，在 Apple Silicon 的 MacBook
+Pro（M5，macOS 26.6）上使用。贵司产品页的常见问题中目前写明"Mac 用户请谨慎
+购买"，理由是 macOS 没有 RTL8127 芯片的驱动。这一情况已经改变：我为
+RTL8127 / RTL8127ATF 编写并发布了一款开源 macOS 驱动，而且开发和验证
+所用的正是贵司的 DTB3F11。
+
+- 驱动为 DriverKit 系统扩展，已用 Apple 开发者 ID 签名并经过公证，可以在
+  保持完整安全设置的普通 Mac 上安装（运行安装包，在系统设置中允许一次即可）。
+- 用贵司网卡通过 DAC 线实测：MTU 1500 下双向 9.4 Gbit/s，9000 字节巨型帧下
+  9.9 Gbit/s，支持 TCP 分段卸载和校验和卸载。
+- 项目主页：https://github.com/stefb69/RTL812xLucy
+- 安装包：https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta2
+
+两点建议：更新常见问题中关于 Mac 的回答；在产品页"驱动下载"栏目中加入该
+驱动链接，标注为"macOS（第三方开源驱动）"。驱动采用 GPLv2 许可、完全免费，
+欢迎链接或镜像。如果贵司希望在其他 RTL8127 产品（双口 DTB3F22 或 PCIe
+网卡）上测试，我很乐意配合；若能提供一块 RJ45 版本的样品，我也可以验证
+该路径。
+
+此致
+Stéphane Benoit（法国）
+https://github.com/stefb69/RTL812xLucy
+
+---
+
 ## Follow-up hygiene
 
 - Answer every issue and comment within a day for the first two weeks.
