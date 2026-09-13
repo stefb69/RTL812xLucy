@@ -1,4 +1,4 @@
-# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.22, 12 Sept 2026)
+# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.23, 13 Sept 2026)
 
 Releases are published by hand with the notarized installer built by
 `packaging/sign-and-notarize.sh`; CI only builds and checks. The text below
@@ -7,7 +7,7 @@ is the release body.
 ---
 
 RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, as a signed and
-notarized DriverKit extension. Download `RTL8127-0.2.22.pkg`, run it, approve
+notarized DriverKit extension. Download `RTL8127-0.2.23.pkg`, run it, approve
 the driver once in System Settings, plug the card in. No recoveryOS, no
 Reduced Security, no `csrutil` changes.
 
@@ -49,6 +49,15 @@ up to 9000, all exercised on the card.
 - README rewritten as an install guide, issue templates (hardware reports),
   benchmark tool in `tools/`.
 
+**Fixed in 0.2.23** (13 Sept 2026, replaces the 0.2.22 package first
+published under this tag): reception stopped for good after the link
+dropped and came back (a 1-2 s link flap on the DAC or switch), until the
+card was replugged. The chip is soft-reset on every link drop and restarts
+its rx ring at descriptor 0; the driver now restarts both rings with it, and
+a 5-second safety net re-arms the rx ring if reception ever stalls again.
+If you installed 0.2.22, run the new package; the card may need a replug
+once to switch to the new driver instance.
+
 **Known limitations**
 
 - Eight or more parallel TCP streams sending from the Mac at MTU 1500 top
@@ -65,4 +74,4 @@ the device until then).
 
 Checksums (SHA-256):
 
-- `RTL8127-0.2.22.pkg`: 2f81bd50359b250894c880835bbaeb4e871896f83b6315189f1cbc3ddb4edb21
+- `RTL8127-0.2.23.pkg`: 48a305a55532c0f1b54423c0ee80d3024f4600b7c54589a626556fa619634192
