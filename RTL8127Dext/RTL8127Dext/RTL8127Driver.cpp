@@ -183,6 +183,7 @@ struct RTL8127Driver_IVars {
     uint64_t txSubmitted, txCompleted, txDroppedFifo, txBytes, txTso, txPartial, txPartialFail;
     uint64_t rxDelivered, rxErrors, rxDroppedFifo, rxRefillShort;
     uint64_t isrCount, isrRx, isrTx, isrTimer, isrLink;
+    uint64_t rxStallIsrSample, rxStallDeliveredSample, rxStallRecoveries;
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
     uint32_t txSynLogged, rxSynLogged;
@@ -838,6 +839,34 @@ static bool rxRingRefill(RTL8127Driver_IVars *iv)
     return complete;
 }
 
+/*
+ * Re-arm the whole rx ring and restart at descriptor 0. Required after any
+ * chip reset: rtl812xLinkDownPatch() -> rtl8125_hw_reset() soft-resets the
+ * NIC on every link drop, which moves its rx pointer back to the ring base
+ * while the buffers stay where they were. The kext does this in
+ * clearRxTxRings(); without it the chip and the driver end up waiting on
+ * each other (chip on a filled, un-rearmed descriptor, driver on an armed
+ * one the chip will never reach) with an RxDescUnavail interrupt storm and
+ * no packet delivered until the card is replugged.
+ */
+static void rxRingRearm(RTL8127Driver_IVars *iv)
+{
+    for (uint32_t i = 0; i < kNumRxDesc; i++) {
+        uint64_t word1;
+
+        if (!iv->rxPkt[i])
+            continue;
+        word1 = (kRxBufferSize | DescOwn);
+        if (i == kRxLastDesc)
+            word1 |= RingEnd;
+        iv->rxRing[i].opts2 = 0;
+        iv->rxRing[i].opts1 = OSSwapHostToLittleInt32((uint32_t)word1);
+    }
+    iv->hw->rxNextDescIndex = 0;
+    wmb();
+    rxRingRefill(iv);
+}
+
 static void txRingReclaim(RTL8127Driver *driver, bool abort)
 {
     RTL8127Driver_IVars *iv = driver->ivars;
@@ -1036,12 +1065,14 @@ static void updateLinkStatus(RTL8127Driver *driver)
 
         hw->rtl812xLinkDownPatch(tp);
 
-        /* Return all in-flight tx packets and reset the rings. */
+        /* The chip was just soft-reset: return all in-flight tx packets
+         * and restart both rings at descriptor 0, like the kext. */
         txRingReclaim(driver, true);
         hw->txTailPtr0 = hw->txClosePtr0 = 0;
         hw->txNextDescIndex = hw->txDirtyDescIndex = 0;
         hw->txNumFreeDesc = kNumTxDesc;
         __atomic_store_n(&iv->txInflightBytes, (SInt64)0, __ATOMIC_RELEASE);
+        rxRingRearm(iv);
 
         IOReturn linkRet = driver->reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
         Log("link down, reportLinkStatus 0x%x", linkRet);
@@ -1111,6 +1142,27 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
     struct rtl8125_private *tp = &hw->linuxData;
 
     if (iv->interfaceEnabled) {
+        /*
+         * Rx stall safety net: thousands of rx interrupts in 5 s without a
+         * single delivered packet means the chip is stuck on a descriptor
+         * we are not looking at (see rxRingRearm). Re-arm and restart rx
+         * rather than waiting for a replug.
+         */
+        uint64_t isrDelta = iv->isrRx - iv->rxStallIsrSample;
+        if (iv->linkUp && isrDelta > 5000 && iv->rxDelivered == iv->rxStallDeliveredSample) {
+            iv->rxStallRecoveries++;
+            Log("rx stall: %llu rx interrupts, no packet delivered, rx next %u opts1 0x%08x - re-arming the rx ring (recovery %llu)",
+                isrDelta, hw->rxNextDescIndex,
+                OSSwapLittleToHostInt32(iv->rxRing[hw->rxNextDescIndex].opts1), iv->rxStallRecoveries);
+            RTL_W8(tp, ChipCmd, CmdTxEnb);
+            rxRingRearm(iv);
+            RTL_W8(tp, ChipCmd, CmdTxEnb | CmdRxEnb);
+            if (iv->rxSubQueue)
+                iv->rxSubQueue->requestDequeue();
+        }
+        iv->rxStallIsrSample = iv->isrRx;
+        iv->rxStallDeliveredSample = iv->rxDelivered;
+
         /* Chip tally counters: the dump issued at the previous tick has
          * landed when the CounterDump bit reads back clear. */
         if (iv->tallyPending && !(RTL_R32(tp, CounterAddrLow) & CounterDump) && iv->statData) {

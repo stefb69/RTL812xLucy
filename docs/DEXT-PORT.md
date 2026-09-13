@@ -177,6 +177,13 @@ Pièges NDK rencontrés, tous corrigés (voir l'historique git et
 - Une file TX par classe de service (BE/BK/VI/VO), comme les dexts d'Apple.
 - Ne pas appeler `bpfAttach()` : panic noyau dans IOSkywalkFamily au
   remplacement du driver (macOS 26.6.2).
+- Toute coupure de lien passe par `rtl812xLinkDownPatch()` →
+  `rtl8125_hw_reset()` : soft reset du chip, dont le pointeur RX repart au
+  descripteur 0. Il faut réarmer l'anneau RX complet et remettre
+  `rxNextDescIndex = 0` (équivalent du `clearRxTxRings()` du kext), sinon
+  chip et driver s'attendent mutuellement : tempête d'interruptions
+  RxDescUnavail, zéro paquet reçu, jusqu'au rebranchement (bug 0.2.22,
+  corrigé 0.2.23 + filet de sécurité toutes les 5 s dans le timer stats).
 - Libérer les dispatch sources depuis le bloc de complétion de `Cancel()`.
 - Logs : les `os_log` du dext apparaissent comme messages `kernel:` avec
   l'émetteur `<bundle>.dext` ; chaînes en `%{public}s` ; les messages `DK:` du
