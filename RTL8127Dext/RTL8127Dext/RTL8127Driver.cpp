@@ -183,7 +183,7 @@ struct RTL8127Driver_IVars {
     uint64_t txSubmitted, txCompleted, txDroppedFifo, txBytes, txTso, txPartial, txPartialFail;
     uint64_t rxDelivered, rxErrors, rxDroppedFifo, rxRefillShort;
     uint64_t isrCount, isrRx, isrTx, isrTimer, isrLink;
-    uint64_t rxStallIsrSample, rxStallDeliveredSample, rxStallRecoveries;
+    uint64_t rxStallIsrSample, rxStallDeliveredSample, rxStallRecoveries, linkGlitches;
     uint32_t lastIsrStatus;
     uint32_t txDebugLogged;
     uint32_t txSynLogged, rxSynLogged;
@@ -1060,9 +1060,30 @@ static void updateLinkStatus(RTL8127Driver *driver)
                 iv->rxSubQueue->requestDequeue();
         }
     } else if (iv->linkUp) {
+        /*
+         * Confirm before tearing the datapath down: a transient PHYstatus
+         * read during a noisy moment must not trigger the full chip reset
+         * below, which itself costs a 1-2 s outage. r8127 defers its link
+         * check by a few jiffies for the same reason.
+         */
+        IOSleep(20);
+        status = RTL_R32(tp, PHYstatus);
+        if ((status != 0xffffffff) && (status & RtlHwLinkStatus)) {
+            iv->linkGlitches++;
+            Log("link glitch ignored (PHYstatus back up after 20 ms, %llu so far)", iv->linkGlitches);
+            return;
+        }
+
         iv->linkUp = false;
         clear_bit(__LINK_UP, &hw->stateFlags);
 
+        /*
+         * Exclude the TX producer (framework thread, holds txLock while it
+         * writes descriptors and rings the doorbell) for the whole reset
+         * and ring restart; linkUp = false alone does not stop a batch
+         * already in progress.
+         */
+        IOLockLock(iv->txLock);
         hw->rtl812xLinkDownPatch(tp);
 
         /* The chip was just soft-reset: return all in-flight tx packets
@@ -1073,6 +1094,7 @@ static void updateLinkStatus(RTL8127Driver *driver)
         hw->txNumFreeDesc = kNumTxDesc;
         __atomic_store_n(&iv->txInflightBytes, (SInt64)0, __ATOMIC_RELEASE);
         rxRingRearm(iv);
+        IOLockUnlock(iv->txLock);
 
         IOReturn linkRet = driver->reportLinkStatus(kIOUserNetworkLinkStatusInactive, iv->currentMedia);
         Log("link down, reportLinkStatus 0x%x", linkRet);
@@ -1126,7 +1148,13 @@ void IMPL(RTL8127Driver, InterruptOccurred)
         }
     }
 
-    if (status & LinkChg) {
+    /*
+     * Link changes are handled only once the interface is enabled:
+     * setInterfaceEnable() runs on a framework thread and reprograms the
+     * PHY/SerDes through OCP transactions; a LinkChg handled here at the
+     * same time would interleave its own OCP accesses with them.
+     */
+    if ((status & LinkChg) && iv->interfaceEnabled) {
         updateLinkStatus(this);
         RTL_W32(tp, TIMER_INT0_8125, 0x0000);
         hw->intrMask = hw->intrMaskRxTx;

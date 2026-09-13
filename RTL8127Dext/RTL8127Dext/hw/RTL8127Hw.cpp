@@ -492,6 +492,19 @@ bool RTL8127Hw::rtl812xInit()
         }
         eee->tx_lpi_enabled = 1;
         eee->tx_lpi_timer = ETH_DATA_LEN + ETH_HLEN + 0x20;
+
+        /*
+         * EEE policy. The block above is the kext's, which then overrides
+         * it from its medium table: the Auto medium (the only one the dext
+         * has) carries kEEETypeNo, so the kext runs with EEE OFF. r8127
+         * also forces eee_enabled = 0 in fiber mode
+         * (rtl8125_init_software_variable). The dext had no equivalent
+         * step, so rtl812xSetPhyMedium() re-enabled EEE/LPI on the
+         * RTL8127ATF SerDes link (external review, 13 Sept 2026), the
+         * prime suspect for the idle-time rx CRC errors and link drops.
+         */
+        eee->eee_enabled = 0;
+        eee->tx_lpi_enabled = 0;
     }
 
     rtl8125_exit_oob(tp);
@@ -953,8 +966,9 @@ void RTL8127Hw::rtl812xSetPhyMedium(struct rtl8125_private *tp, UInt8 autoneg, U
         adv |= tp->advertising;
     }
     
-    /* Enable or disable EEE support according to selected medium. */
-    if (tp->eee.eee_enabled && (autoneg == AUTONEG_ENABLE)) {
+    /* Enable or disable EEE support according to selected medium.
+     * Never on the fiber/DAC SerDes path (no LPI on 10GBASE-R). */
+    if (tp->eee.eee_enabled && (autoneg == AUTONEG_ENABLE) && !HW_FIBER_MODE_ENABLED(tp)) {
         rtl8125_enable_eee(tp);
         DebugLog("Enable EEE support.\n");
     } else {
