@@ -1228,8 +1228,14 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
             iv->txReclaimCalls, iv->txReclaimNonempty, iv->txReclaimedDescriptors, iv->txReclaimMaxBatch,
             depths[0], depths[1], depths[2], depths[3],
             iv->txDoneSampledMax[0], iv->txDoneSampledMax[1], iv->txDoneSampledMax[2], iv->txDoneSampledMax[3]);
-        Log("stats: link %u tx sub %llu done %llu tso %llu partial %llu/%llu bytes %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
-            iv->linkUp, txq.submitted, iv->txCompleted, txq.tso, iv->txPartial, iv->txPartialFail, txq.bytes,
+        /* Die temperature, same sensor and conversion as r8127's
+         * /proc/net/r8127/<if>/temp (PHY OCP 0xBD84, 10 bits, 0.5 C/LSB,
+         * two's complement above 512). Logged raw too in case the copper
+         * PHY block answers nonsense in fiber mode. */
+        uint16_t tsRaw = mdio_direct_read_phy_ocp(tp, 0xBD84) & 0x3ff;
+        int tempC = (tsRaw <= 512) ? (int)(tsRaw / 2) : -(int)((512 - (tsRaw - 512)) / 2);
+        Log("stats: link %u temp %dC (raw 0x%03x) tx sub %llu done %llu tso %llu partial %llu/%llu bytes %llu free %d tail %u close %u hwclo %u | rx deliv %llu err %llu short %llu | isr %llu rx %llu tx %llu tmr %llu link %llu last 0x%08x imr 0x%08x | fifo drops tx %llu rx %llu",
+            iv->linkUp, tempC, tsRaw, txq.submitted, iv->txCompleted, txq.tso, iv->txPartial, iv->txPartialFail, txq.bytes,
             __atomic_load_n(&hw->txNumFreeDesc, __ATOMIC_ACQUIRE), hw->txTailPtr0, hw->txClosePtr0,
             hw->rtl812xGetHwCloPtr(tp),
             iv->rxDelivered, iv->rxErrors, iv->rxRefillShort,
