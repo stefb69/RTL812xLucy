@@ -1175,6 +1175,16 @@ void IMPL(RTL8127Driver, StatsTimerOccurred)
                 (uint64_t)OSSwapLittleToHostInt64(st->rxUnicast), (uint64_t)OSSwapLittleToHostInt64(st->rxBroadcast),
                 OSSwapLittleToHostInt32(st->rxMulticast),
                 (uint64_t)OSSwapLittleToHostInt64(st->txOctets), (uint64_t)OSSwapLittleToHostInt64(st->rxOctets));
+            /* Error breakdown: which kind of bad frame the MAC is counting.
+             * alignErrors/rxFrame2Long/rxRunt/rxMacError/unknown-opcode are
+             * the extended tally fields; rdu/tdu are descriptor-unavailable
+             * events. */
+            Log("tally-err: align %u toolong %u runt %u macerr %u unkop %u pause %u tcamdrop %u rdu %u tdu %u",
+                OSSwapLittleToHostInt32(st->alignErrors32), OSSwapLittleToHostInt32(st->rxFrame2Long),
+                OSSwapLittleToHostInt32(st->rxRunt), OSSwapLittleToHostInt32(st->rxMacError),
+                OSSwapLittleToHostInt32(st->rxUnknownOpcode), OSSwapLittleToHostInt32(st->rxPauseAll),
+                OSSwapLittleToHostInt32(st->rxTcamDropped), OSSwapLittleToHostInt32(st->rdu),
+                OSSwapLittleToHostInt32(st->tdu));
             iv->tallyPending = false;
         }
         if (!iv->tallyPending) {
