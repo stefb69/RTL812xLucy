@@ -184,6 +184,17 @@ Pièges NDK rencontrés, tous corrigés (voir l'historique git et
   chip et driver s'attendent mutuellement : tempête d'interruptions
   RxDescUnavail, zéro paquet reçu, jusqu'au rebranchement (bug 0.2.22,
   corrigé 0.2.23 + filet de sécurité toutes les 5 s dans le timer stats).
+- **EEE : ne pas garder le `eee_enabled = 1` de l'init du kext.** Le kext
+  le remet à 0 via sa table de médias (Auto = `kEEETypeNo`) avant
+  d'activer la carte ; r8127 force 0 en mode fibre. Le dext avait sauté
+  cette étape et `rtl812xSetPhyMedium()` activait l'EEE/LPI sur le SerDes
+  10GBASE-R : erreurs CRC en réception à rythme constant au repos (~5/min,
+  aucune à pleine charge), coupures de lien de 1-2 s toutes les 20-40 min,
+  un seul sens, indépendantes du câble, du port switch, de la température.
+  Trouvé par relecture externe ([rx-crc-audit-conclusions.md](rx-crc-audit-conclusions.md)),
+  corrigé en 0.2.26 : 0 erreur ensuite. Même version : link down confirmé
+  par relecture de `PHYstatus` à 20 ms, LinkChg ignoré tant que l'interface
+  n'est pas activée, reset des anneaux sous `txLock`.
 - Libérer les dispatch sources depuis le bloc de complétion de `Cancel()`.
 - Logs : les `os_log` du dext apparaissent comme messages `kernel:` avec
   l'émetteur `<bundle>.dext` ; chaînes en `%{public}s` ; les messages `DK:` du

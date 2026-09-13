@@ -1,5 +1,11 @@
 # Demande de relecture : erreurs CRC en réception et coupures de lien (13 sept. 2026)
 
+**Résolu.** Réponse dans [rx-crc-audit-conclusions.md](rx-crc-audit-conclusions.md) :
+le dext activait l'EEE sur le SerDes fibre (le kext et r8127 ne le font
+pas). Correctif 0.2.26 (commit 324902f) : 0 erreur CRC et 0 coupure de lien
+ensuite, contre ~5 erreurs/min et une coupure toutes les 20-40 min avant.
+La « dégradation matérielle » supposée ci-dessous n'existait pas.
+
 Contexte pour un relecteur externe. Tout ce qui suit est mesuré sur la
 machine de test ; les hypothèses sont marquées comme telles. Code :
 branche `rtl8127`, dext 0.2.25 (commit 499a03a), `RTL8127Dext/`.
