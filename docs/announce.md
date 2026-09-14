@@ -261,6 +261,43 @@ https://github.com/stefb69/RTL812xLucy
 
 ---
 
+### Réponse de Lekuo (14 sept. 2026) et suite
+
+Mandy Sun (Lekuo, cc sheng.li, sally.shi) : suggestions acceptées (FAQ +
+section téléchargement), leur test interne d'une carte RTL8127 RJ45 sous
+macOS plafonnait à 5G, et ils proposent d'envoyer d'autres modèles. Le
+plafond 5G était un bug du driver (10GBASE-T jamais annoncé), corrigé en
+0.2.27. Réponse envoyée le 14 sept. (adresse postale à compléter) :
+
+Hello Mandy,
+
+Thank you for the quick and positive answer, and for updating the FAQ and the download section. Please link to the GitHub releases page rather than to a specific file, so your users always get the latest package:
+https://github.com/stefb69/RTL812xLucy/releases
+
+About the RJ45 version linking at 5G on macOS: your test found a real bug, thank you. The driver inherited its PHY code from the RTL8125/8126 kext and never advertised 10GBASE-T during auto-negotiation (the 10G bit was missing from the NBASE-T advertisement register), so the link settled at the highest advertised rate, 5G. It is fixed in version 0.2.27, published today, in the same way Realtek's r8127 Linux driver does it. I could not verify it myself because I only have the SFP+ adapter, so a copper sample would let me confirm full 10G and keep the RJ45 path tested from now on.
+
+Samples that would help most, in order:
+1. An RTL8127 RJ45 (10GBASE-T) adapter, USB4 or PCIe, to validate the fix above.
+2. The dual SFP+ USB4 adapter (RTL8127ATF, your product id 680), to test two ports on one controller.
+3. An RTL8127 PCIe SFP+ card (id 659 or 691) and the M.2 version (id 679), to cover Mac Pro / enclosure users.
+
+Shipping address:
+[ADRESSE POSTALE]
+[TÉLÉPHONE pour le transporteur]
+
+Two more things, if they are possible on your side:
+- If you have a technical contact at Realtek (FAE) for the RTL8127, an introduction would help: access to the register documentation or errata would make the driver easier to keep correct as macOS evolves.
+- Which Mac and macOS version did your team use for the 5G test? I would like to reproduce the exact setup.
+
+I will report the results of every sample here and in the project README (tested hardware table), with your product names.
+
+Best regards,
+Stéphane Benoit
+https://github.com/stefb69/RTL812xLucy
+
+
+---
+
 ## 9. Mail to Realtek (NIC software team)
 
 Address from the r8127 Linux driver headers: nicfae@realtek.com. Low
