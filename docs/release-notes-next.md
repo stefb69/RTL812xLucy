@@ -1,4 +1,4 @@
-# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.26, 13 Sept 2026)
+# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.27, 14 Sept 2026)
 
 Releases are published by hand with the notarized installer built by
 `packaging/sign-and-notarize.sh`; CI only builds and checks. The text below
@@ -7,7 +7,7 @@ is the release body.
 ---
 
 RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, as a signed and
-notarized DriverKit extension. Download `RTL8127-0.2.26.pkg`, run it, approve
+notarized DriverKit extension. Download `RTL8127-0.2.27.pkg`, run it, approve
 the driver once in System Settings, plug the card in. No recoveryOS, no
 Reduced Security, no `csrutil` changes.
 
@@ -58,6 +58,13 @@ a 5-second safety net re-arms the rx ring if reception ever stalls again.
 If you installed 0.2.22, run the new package; the card may need a replug
 once to switch to the new driver instance.
 
+**Fixed in 0.2.27** (14 Sept 2026): RTL8127 RJ45 (10GBASE-T) cards linked
+at 5G only. The PHY code inherited from the RTL8125/8126 driver never
+advertised 10GBASE-T during auto-negotiation; it now does, like Realtek's
+r8127 Linux driver. Reported by a board vendor's macOS test; not yet
+re-tested on a copper card (the SFP+ path is unchanged). If you have an RJ45
+RTL8127, please try it and open a hardware report.
+
 **Fixed in 0.2.26** (13 Sept 2026): Energy Efficient Ethernet was left
 enabled on the SFP+ SerDes link (the kext and Realtek's Linux driver keep
 it off there). Symptoms: a steady trickle of rx CRC errors when the link
@@ -80,4 +87,4 @@ the device until then).
 
 Checksums (SHA-256):
 
-- `RTL8127-0.2.26.pkg`: a1b7ff9c4aab58993605c5729918c80f690fbf812d0116cddec47938f0b6de7c
+- `RTL8127-0.2.27.pkg`: e94b2592aedaf4c2b31de470720a2966edf27cb0b3d016b75e25f72d31fa5861
