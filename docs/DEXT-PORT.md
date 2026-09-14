@@ -221,6 +221,15 @@ l'interface à 1500 (`ifconfig mtu 9000` → EINVAL sans appel au dext).
 Note : le `ping` de macOS limite `-s` à 8184 ; tester le 8972 depuis le peer
 Linux (`ping -M do -s 8972`).
 
+- **RJ45 (RTL8127A) plafonné à 5G** : la couche hw héritée du kext (écrite
+  pour le 8125/8126) n'annonçait jamais le 10GBASE-T en autonégociation :
+  `rtl8125_set_link_option()` s'arrêtait à `SPEED_5000`, `rtl812xSetPhyMedium()`
+  ne posait jamais `RTK_ADVERTISE_10000FULL` (0x1000) dans le registre PHY OCP
+  0xA5D4, et l'appel initial plafonnait à 5000. Remonté par Lekuo (test
+  interne macOS à 5G), corrigé en 0.2.27 dans les deux drivers comme dans
+  `rtl8127_set_speed_xmii` de r8127. Non retesté sur carte cuivre (aucune
+  sous la main), sans effet sur la fibre (SerDes forcé).
+
 ## Points ouverts
 
 - Débit : le modèle pool/queues NDK à 10 Gb/s est peu documenté publiquement —

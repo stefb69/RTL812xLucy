@@ -416,8 +416,7 @@ bool RTL8125::rtl812xInit()
     /* Set wake on LAN support. */
     wolCapable = (tp->wol_enabled == WOL_ENABLED);
     
-    rtl8125_set_link_option(tp, AUTONEG_ENABLE, HW_SUPP_PHY_LINK_SPEED_5000M(tp) ?
-                            SPEED_5000 : SPEED_2500, DUPLEX_FULL,
+    rtl8125_set_link_option(tp, AUTONEG_ENABLE, tp->HwSuppMaxPhyLinkSpeed, DUPLEX_FULL,
                             rtl8125_fc_none);
     
     if (tp->mcfg != CFG_METHOD_DEFAULT) {
@@ -948,7 +947,9 @@ void RTL8125::rtl812xSetPhyMedium(struct rtl8125_private *tp, UInt8 autoneg, UIn
     DebugLog("speed: %u, duplex: %u, adv: %llx\n", static_cast<unsigned int>(speed), duplex, adv);
     
     if (!rtl8125_is_speed_mode_valid(speed)) {
-        if (HW_SUPP_PHY_LINK_SPEED_5000M(tp))
+        if (HW_SUPP_PHY_LINK_SPEED_10000M(tp))
+            speed = SPEED_10000;
+        else if (HW_SUPP_PHY_LINK_SPEED_5000M(tp))
             speed = SPEED_5000;
         else if (HW_SUPP_PHY_LINK_SPEED_2500M(tp))
             speed = SPEED_2500;
@@ -988,7 +989,7 @@ void RTL8125::rtl812xSetPhyMedium(struct rtl8125_private *tp, UInt8 autoneg, UIn
     giga_ctrl = rtl8125_mdio_read(tp, MII_CTRL1000);
     giga_ctrl &= ~(ADVERTISE_1000HALF | ADVERTISE_1000FULL);
     ctrl_2500 = mdio_direct_read_phy_ocp(tp, 0xA5D4);
-    ctrl_2500 &= ~(RTK_ADVERTISE_2500FULL | RTK_ADVERTISE_5000FULL);
+    ctrl_2500 &= ~(RTK_ADVERTISE_2500FULL | RTK_ADVERTISE_5000FULL | RTK_ADVERTISE_10000FULL);
 
     if (autoneg == AUTONEG_ENABLE) {
         /*n-way force*/
@@ -1021,6 +1022,11 @@ void RTL8125::rtl812xSetPhyMedium(struct rtl8125_private *tp, UInt8 autoneg, UIn
         if (HW_SUPP_PHY_LINK_SPEED_5000M(tp)) {
             if (adv & RTK_ADVERTISED_5000baseX_Full)
                 ctrl_2500 |= RTK_ADVERTISE_5000FULL;
+        }
+        if (HW_SUPP_PHY_LINK_SPEED_10000M(tp)) {
+            /* 10GBASE-T advertisement (r8127 rtl8127_set_speed_xmii). */
+            if (adv & ADVERTISED_10000baseT_Full)
+                ctrl_2500 |= RTK_ADVERTISE_10000FULL;
         }
 
         //flow control

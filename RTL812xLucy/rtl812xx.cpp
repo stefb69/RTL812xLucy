@@ -111,7 +111,7 @@ void rtl8125_set_link_option(struct rtl8125_private *tp,
     u64 adv;
 
     if (!rtl8125_is_speed_mode_valid(speed))
-        speed = SPEED_5000;
+        speed = SPEED_10000;
 
     if (!rtl8125_is_duplex_mode_valid(duplex))
         duplex = DUPLEX_FULL;
@@ -123,6 +123,11 @@ void rtl8125_set_link_option(struct rtl8125_private *tp,
     adv = 0;
     
     switch(speed) {
+        case SPEED_10000:
+                /* r8127: 10GBASE-T is advertised like the other NBASE-T
+                 * rates; without this bit a copper RTL8127 tops out at 5G. */
+                adv |= ADVERTISED_10000baseT_Full;
+                /* fallthrough */
         case SPEED_5000:
                 adv |= RTK_ADVERTISED_5000baseX_Full;
                 /* fallthrough */
@@ -1915,6 +1920,8 @@ static int rtl8125_set_wol_link_speed(struct rtl8125_private *tp)
         ctrl_2500 |= RTK_ADVERTISE_2500FULL;
     else if (adv & RTK_ADVERTISED_5000baseX_Full && (status_2500 & RTK_LPA_ADVERTISE_5000FULL))
         ctrl_2500 |= RTK_ADVERTISE_5000FULL;
+    else if (adv & ADVERTISED_10000baseT_Full && (status_2500 & RTK_LPA_ADVERTISE_10000FULL))
+        ctrl_2500 |= RTK_ADVERTISE_10000FULL;
     else
         goto exit;
 

@@ -26,7 +26,7 @@ Apple Silicon Macs, including the SFP+ variant (RTL8127ATF) for DAC and fiber.
 | Hardware | Status |
 |---|---|
 | RTL8127ATF (SFP+, PCI `10ec:0e10`) | **Validated.** DHCP, 10G full duplex over SFP+ DAC, multi-GB transfers both ways, zero errors. |
-| RTL8127A / RTL8127 (10GBASE-T RJ45, PCI `10ec:8127`) | Same silicon, copper PHY path ported from `r8127`, not yet tested on a card. Testers wanted. |
+| RTL8127A / RTL8127 (10GBASE-T RJ45, PCI `10ec:8127`) | Same silicon, copper PHY path ported from `r8127`. A board vendor's test on macOS linked at 5G only: the port never advertised 10GBASE-T, fixed in dext 0.2.27 / kext (Sept 2026), not yet re-tested on a card. Testers wanted. |
 | RTL8125 / RTL8126 (2.5G / 5G) | Unchanged from upstream RTL812xLucy. |
 
 | Platform | Status |
