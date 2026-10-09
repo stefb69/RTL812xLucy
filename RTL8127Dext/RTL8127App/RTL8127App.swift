@@ -331,6 +331,7 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
 
     func request(_ request: OSSystemExtensionRequest,
                  didFinishWithResult result: OSSystemExtensionRequest.Result) {
+        NSLog("RTL8127App: request finished (%ld) in state %@", result.rawValue, String(describing: state))
         if pendingUninstall { finishUninstall(); return }
         let removed = (state == .removing)
         switch result {
@@ -347,6 +348,8 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
 
     func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
         let ns = error as NSError
+        NSLog("RTL8127App: request failed in state %@: %@ (%@ %ld)",
+              String(describing: state), ns.localizedDescription, ns.domain, ns.code)
         if pendingUninstall { pendingUninstall = false }
         if ns.domain == OSSystemExtensionErrorDomain,
            ns.code == OSSystemExtensionError.requestCanceled.rawValue {
@@ -498,7 +501,14 @@ struct ContentView: View {
         case .failed(let message):
             StatusRow(icon: "xmark.circle.fill", color: .red, title: "Installation failed") {
                 Text(message).font(.footnote.monospaced())
-                Button("Try again") { manager.activate() }.padding(.top, 4)
+                HStack {
+                    Button("Try again") { manager.activate() }
+                    if manager.hasAppleDriver {
+                        // Always leave a way back to Apple's driver.
+                        Button("Use the macOS driver") { manager.chooseSystemDriver(installed: true) }
+                    }
+                }
+                .padding(.top, 4)
             }
         }
     }
