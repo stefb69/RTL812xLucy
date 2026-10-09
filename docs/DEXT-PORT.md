@@ -230,6 +230,15 @@ Linux (`ping -M do -s 8972`).
   `rtl8127_set_speed_xmii` de r8127. Non retesté sur carte cuivre (aucune
   sous la main), sans effet sur la fibre (SerDes forcé).
 
+- **Médias / vitesse de lien non affichés sur macOS 26.x** : `ifconfig enX`
+  répondait `SIOCGIFXMEDIA: Input/output error` et le nœud
+  `IOSkywalkLegacyEthernet` gardait `IOLinkSpeed = 0`, `IOActiveMedium = ""`
+  malgré `reportLinkStatus()`. Côté Apple, pas côté driver : sur macOS
+  27.0.1 (9 oct. 2026), sans changer le dext (0.2.27), `ifconfig` affiche
+  `media: autoselect (10Gbase-T <full-duplex,flow-control>)`,
+  `IOLinkSpeed = 10000000000`, et la barre de menus montre l'icône Ethernet
+  quand en10 est le service principal.
+
 ## Points ouverts
 
 - Débit : le modèle pool/queues NDK à 10 Gb/s est peu documenté publiquement —

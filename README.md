@@ -31,7 +31,7 @@ Apple Silicon Macs, including the SFP+ variant (RTL8127ATF) for DAC and fiber.
 
 | Platform | Status |
 |---|---|
-| Apple Silicon (M-series), macOS 26.5 / 26.6 | **Validated** on an M5 Mac, card in a Thunderbolt enclosure (dext on 26.6, kext on 26.5). |
+| Apple Silicon (M-series), macOS 26.5 / 26.6 / 27.0 | **Validated** on an M5 Mac, card in a Thunderbolt enclosure (dext on 26.6 and 27.0.1, kext on 26.5). |
 | Intel Mac / hackintosh (x86_64) | Builds universal; RTL8127 path not tested on Intel. |
 
 Throughput, iperf3 to a Linux peer on the same 10G switch, MTU 1500:
@@ -153,7 +153,7 @@ SPI that Apple strips from the public SDK; regenerate them with
 
 | Mac | macOS | Card | Enclosure | Link |
 |---|---|---|---|---|
-| M5 | 26.5 (kext), 26.6 (dext 0.2.22) | RTL8127ATF (SFP+) | Thunderbolt PCIe enclosure | 10G, SFP+ DAC to a 10G switch, MTU 1500 and 9000 |
+| M5 | 26.5 (kext), 26.6 and 27.0.1 (dext 0.2.27) | RTL8127ATF (SFP+) | Thunderbolt PCIe enclosure | 10G, SFP+ DAC to a 10G switch, MTU 1500 and 9000 |
 
 If it works (or does not) for you, please open a
 [hardware report](https://github.com/stefb69/RTL812xLucy/issues/new?template=hardware-report.yml)
@@ -165,7 +165,10 @@ built from reports.
 - The kext (not shipped anymore) is unsigned: Reduced Security and
   `csrutil disable` are required on Apple Silicon. Use the signed dext.
 - The link medium is reported as 10GBase-T even over SFP+ DAC or fiber.
-  macOS has no medium constant for those; it is a display issue only.
+  macOS has no medium constant for those; it is a display issue only. On
+  macOS 26.x the dext's link speed and medium were not shown at all
+  (`ifconfig` answered an I/O error for the media query); macOS 27.0 fixed
+  that on Apple's side and now shows "10Gbase-T full-duplex".
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
   disabled for this chip).
 - The dext has no Wake on LAN.
