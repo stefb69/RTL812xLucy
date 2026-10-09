@@ -239,6 +239,28 @@ Linux (`ping -M do -s 8972`).
   `IOLinkSpeed = 10000000000`, et la barre de menus montre l'icône Ethernet
   quand en10 est le service principal.
 
+## macOS 27 : driver Apple natif (9 oct. 2026)
+
+macOS 27.0.1 embarque `com.apple.driver.AppleEthernetRL` 1.0.0d1
+(`IONetworkingFamily.kext/Contents/PlugIns`, copyright 2024, dépend
+d'IOSkywalkFamily + AppleSkywalkAVB) : `IOPCIMatch 0x812410ec&0xfffcffff`
+(= 10ec:8124–8127, pas 10ec:0e10), `IOPCITunnelCompatible`, IOProbeScore
+1000, `OSBundleRequired Network-Root`. Au boot il est publié sur la carte
+à 12:40:06, le dext n'est « réalisé » par kernelmanagerd qu'à 12:41:10 :
+le kext gagne par antériorité, pas par score. Notre carte Lekuo DTB3F11
+(RTL8127ATF, SFP+) s'identifie **10ec:8127, subsystem 10ec:0123** (pas
+0e10), donc elle est couverte. Mesures avec le driver Apple (iperf3 vers
+bazzite, MTU 1500) : TX1 9,24 / RX1 9,10 / TX8 9,13 / RX8 9,38 Gbit/s ;
+`ifconfig` options TSO4/TSO6/VLAN_HWTAGGING/AV/PARTIAL_CSUM, média
+« 10Gbase-T full-duplex, flow-control » affiché. **Pas de jumbo** :
+`IOMaxPacketSize = 1518`. Contexte : MacGeneration rapporte qu'Apple
+passe à Realtek (RTL8125 2,5G sur Mac mini M6, RTL8127 pour l'option 10G
+sur Mac Studio M5 Max/Ultra), d'où ce driver.
+
+À décider : sur macOS 27+, retirer 8125/8126/8127 du `IOPCIPrimaryMatch`
+(laisser Apple faire, éviter l'alternance kext/dext au hot-plug) et ne
+garder que 10ec:0e10, avec une option « jumbo » qui réactive le match.
+
 ## Points ouverts
 
 - Débit : le modèle pool/queues NDK à 10 Gb/s est peu documenté publiquement —
