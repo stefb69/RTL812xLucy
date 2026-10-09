@@ -1082,46 +1082,6 @@
         }
       }
     },
-    "Link status appears once the driver is attached to a card.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L'état du lien s'affiche une fois le pilote attaché à une carte."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Verbindungsstatus erscheint, sobald der Treiber mit einer Karte verbunden ist."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "El estado del enlace aparece cuando el controlador está asociado a una tarjeta."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lo stato del collegamento compare quando il driver è collegato a una scheda."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ドライバがカードに接続されるとリンクの状態が表示されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "驱动加载到网卡后会显示链路状态。"
-          }
-        }
-      }
-    },
     "%lld Gbit/s": {
       "shouldTranslate": false
     },
@@ -1247,6 +1207,646 @@
           "stringUnit": {
             "state": "translated",
             "value": "移到“应用程序”"
+          }
+        }
+      }
+    },
+    "Removing…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suppression…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird entfernt…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminando…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rimozione…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在移除…"
+          }
+        }
+      }
+    },
+    "Uninstall completely…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désinstaller complètement…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vollständig deinstallieren…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desinstalar por completo…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disinstalla completamente…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全にアンインストール…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全卸载…"
+          }
+        }
+      }
+    },
+    "Uninstall the RTL8127 driver?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désinstaller le pilote RTL8127 ?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127-Treiber deinstallieren?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Desinstalar el controlador RTL8127?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disinstallare il driver RTL8127?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127 ドライバをアンインストールしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要卸载 RTL8127 驱动吗？"
+          }
+        }
+      }
+    },
+    "Uninstall": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désinstaller"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deinstallieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desinstalar"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disinstalla"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アンインストール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annulla"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
+    "This removes the driver and moves this app to the Trash. On macOS 27 and later the card keeps working with the macOS driver.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le pilote est retiré et cette app est placée dans la Corbeille. Sur macOS 27 et ultérieur, la carte continue de fonctionner avec le pilote de macOS."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Treiber wird entfernt und diese App in den Papierkorb gelegt. Ab macOS 27 funktioniert die Karte weiter mit dem Treiber von macOS."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se elimina el controlador y esta app se mueve a la Papelera. En macOS 27 o posterior, la tarjeta sigue funcionando con el controlador de macOS."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il driver viene rimosso e questa app spostata nel Cestino. Su macOS 27 e successivi la scheda continua a funzionare con il driver di macOS."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドライバを削除し、このアプリをゴミ箱に移動します。macOS 27 以降では、カードは macOS 標準のドライバで引き続き動作します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将移除驱动并把此应用移到废纸篓。在 macOS 27 及更高版本上，网卡将继续使用 macOS 自带的驱动工作。"
+          }
+        }
+      }
+    },
+    "macOS includes a driver for this card": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS inclut un pilote pour cette carte"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS enthält einen Treiber für diese Karte"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS incluye un controlador para esta tarjeta"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS include un driver per questa scheda"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS にこのカード用ドライバが含まれています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 自带此网卡的驱动"
+          }
+        }
+      }
+    },
+    "macOS 27 and later drive Realtek RTL8125, RTL8126 and RTL8127 cards natively. You only need this driver for jumbo frames (MTU up to 9000). Which one do you want to use?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 et ultérieur gèrent nativement les cartes Realtek RTL8125, RTL8126 et RTL8127. Ce pilote n'est utile que pour les trames jumbo (MTU jusqu'à 9000). Lequel voulez-vous utiliser ?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 und neuer unterstützen Realtek RTL8125-, RTL8126- und RTL8127-Karten nativ. Dieser Treiber wird nur für Jumbo-Frames (MTU bis 9000) benötigt. Welchen möchten Sie verwenden?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 y posteriores admiten de forma nativa las tarjetas Realtek RTL8125, RTL8126 y RTL8127. Este controlador solo es necesario para tramas jumbo (MTU hasta 9000). ¿Cuál desea usar?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 e successivi supportano nativamente le schede Realtek RTL8125, RTL8126 e RTL8127. Questo driver serve solo per i jumbo frame (MTU fino a 9000). Quale vuoi usare?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 以降は Realtek RTL8125、RTL8126、RTL8127 カードを標準でサポートします。このドライバが必要なのはジャンボフレーム（MTU 最大 9000）を使う場合だけです。どちらを使いますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 及更高版本原生支持 Realtek RTL8125、RTL8126 和 RTL8127 网卡。只有需要巨型帧（MTU 最高 9000）时才需要本驱动。您想使用哪一个？"
+          }
+        }
+      }
+    },
+    "Use the macOS driver": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser le pilote de macOS"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Treiber von macOS verwenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar el controlador de macOS"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa il driver di macOS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS のドライバを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 macOS 驱动"
+          }
+        }
+      }
+    },
+    "Keep this driver (jumbo frames)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Garder ce pilote (trames jumbo)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diesen Treiber behalten (Jumbo-Frames)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener este controlador (tramas jumbo)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantieni questo driver (jumbo frame)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このドライバを使い続ける（ジャンボフレーム）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留本驱动（巨型帧）"
+          }
+        }
+      }
+    },
+    "Using the macOS driver": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pilote de macOS utilisé"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Treiber von macOS wird verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usando el controlador de macOS"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In uso il driver di macOS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS のドライバを使用中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在使用 macOS 驱动"
+          }
+        }
+      }
+    },
+    "This driver is not installed; macOS drives the card itself. Install it only if you need jumbo frames (MTU up to 9000).": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce pilote n'est pas installé ; macOS gère la carte lui-même. Installez-le seulement si vous avez besoin des trames jumbo (MTU jusqu'à 9000)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Treiber ist nicht installiert; macOS steuert die Karte selbst. Installieren Sie ihn nur, wenn Sie Jumbo-Frames (MTU bis 9000) benötigen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este controlador no está instalado; macOS gestiona la tarjeta por sí mismo. Instálelo solo si necesita tramas jumbo (MTU hasta 9000)."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo driver non è installato; macOS gestisce la scheda da solo. Installalo solo se ti servono i jumbo frame (MTU fino a 9000)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このドライバはインストールされていません。カードは macOS が直接制御しています。ジャンボフレーム（MTU 最大 9000）が必要な場合のみインストールしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本驱动未安装，网卡由 macOS 自行驱动。仅在需要巨型帧（MTU 最高 9000）时才安装。"
+          }
+        }
+      }
+    },
+    "Install this driver (jumbo frames)…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installer ce pilote (trames jumbo)…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diesen Treiber installieren (Jumbo-Frames)…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalar este controlador (tramas jumbo)…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installa questo driver (jumbo frame)…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このドライバをインストール（ジャンボフレーム）…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装本驱动（巨型帧）…"
+          }
+        }
+      }
+    },
+    "Connected via %@, handled by the macOS driver.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branchée en %@, gérée par le pilote de macOS."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden über %@, vom Treiber von macOS gesteuert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectada por %@, gestionada por el controlador de macOS."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collegata via %@, gestita dal driver di macOS."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で接続、macOS のドライバが制御中。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 %@ 连接，由 macOS 驱动管理。"
+          }
+        }
+      }
+    },
+    "Connected via %@, still attached to this driver. Unplug and replug the card so macOS takes it over.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branchée en %@, encore rattachée à ce pilote. Débranchez et rebranchez la carte pour que macOS la prenne en charge."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden über %@, noch an diesen Treiber gebunden. Ziehen Sie die Karte ab und stecken Sie sie wieder ein, damit macOS sie übernimmt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectada por %@, aún vinculada a este controlador. Desconecte y vuelva a conectar la tarjeta para que macOS la gestione."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collegata via %@, ancora legata a questo driver. Scollega e ricollega la scheda perché macOS la prenda in carico."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で接続、まだこのドライバに接続されています。macOS に切り替えるにはカードを抜き差ししてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 %@ 连接，仍由本驱动管理。请拔下并重新插入网卡，以便由 macOS 接管。"
+          }
+        }
+      }
+    },
+    "Link status appears once a driver is attached to a card.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'état du lien apparaît dès qu'un pilote est rattaché à une carte."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Verbindungsstatus erscheint, sobald ein Treiber an eine Karte gebunden ist."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El estado del enlace aparece cuando un controlador está vinculado a una tarjeta."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo stato del collegamento appare quando un driver è collegato a una scheda."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドライバがカードに接続されるとリンク状態が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "驱动连接到网卡后将显示链路状态。"
           }
         }
       }

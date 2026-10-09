@@ -1,4 +1,4 @@
-# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.27, 14 Sept 2026)
+# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.28, 9 Oct 2026)
 
 Releases are published by hand with the notarized installer built by
 `packaging/sign-and-notarize.sh`; CI only builds and checks. The text below
@@ -7,7 +7,7 @@ is the release body.
 ---
 
 RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, as a signed and
-notarized DriverKit extension. Download `RTL8127-0.2.27.pkg`, run it, approve
+notarized DriverKit extension. Download `RTL8127-0.2.28.pkg`, run it, approve
 the driver once in System Settings, plug the card in. No recoveryOS, no
 Reduced Security, no `csrutil` changes.
 
@@ -57,6 +57,15 @@ its rx ring at descriptor 0; the driver now restarts both rings with it, and
 a 5-second safety net re-arms the rx ring if reception ever stalls again.
 If you installed 0.2.22, run the new package; the card may need a replug
 once to switch to the new driver instance.
+
+**macOS 27 (0.2.28, 9 Oct 2026)**: macOS 27 ships its own driver for the
+Realtek RTL8125/8126/8127 (`AppleEthernetRL`), which runs these cards at
+line rate but without jumbo frames (MTU capped at 1500). The app now
+detects it: on macOS 27 and later a fresh install leaves the card to the
+macOS driver and offers this one as an option for jumbo frames; a Mac
+upgraded from macOS 26 gets a one-time choice. New "Uninstall completely"
+button (removes the driver, its settings and the app). The driver itself
+is unchanged since 0.2.27.
 
 **Fixed in 0.2.27** (14 Sept 2026): RTL8127 RJ45 (10GBASE-T) cards linked
 at 5G only. The PHY code inherited from the RTL8125/8126 driver never

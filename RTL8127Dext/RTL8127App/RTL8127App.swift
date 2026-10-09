@@ -20,10 +20,22 @@ enum DriverState: Equatable {
     case wrongLocation
     case checking
     case installing
+    case removing
     case waitingForApproval
     case enabled
     case rebootRequired
     case failed(String)
+    /// macOS 27+: Apple ships its own Realtek driver and this one is
+    /// already installed (upgrade from macOS 26): ask which one to keep.
+    case choiceNeeded
+    /// macOS 27+: the user chose Apple's driver; ours is not installed.
+    case systemDriver
+}
+
+/// What the user decided on a macOS that has Apple's Realtek driver.
+enum DriverMode: String {
+    case system   // leave the card to macOS (default on a fresh install)
+    case jumbo    // install this driver (jumbo frames up to 9000)
 }
 
 // MARK: - Hardware state (from the IORegistry)
@@ -37,6 +49,11 @@ struct CardInfo: Equatable {
     var linkUp: Bool?
     var speedMbps: Int?
     var ipv4: String?
+
+    /// Attached to this project's DriverKit extension.
+    var usesOurDriver: Bool { driver == "RTL8127Driver" }
+    /// Attached to a driver shipped by Apple (macOS 27+: AppleEthernetRL).
+    var usesAppleDriver: Bool { driver?.hasPrefix("AppleEthernet") == true }
 }
 
 enum Hardware {
@@ -98,12 +115,15 @@ enum Hardware {
             defer { IOObjectRelease(child) }
 
             if info.driver == nil {
+                var name = [CChar](repeating: 0, count: 128)
+                IOObjectGetClass(child, &name)
+                let className = String(cString: name)
                 if let userClass = property(child, "IOUserClass") as? String {
                     info.driver = userClass
-                } else if IOObjectConformsTo(child, "IONetworkController") != 0 {
-                    var name = [CChar](repeating: 0, count: 128)
-                    IOObjectGetClass(child, &name)
-                    info.driver = String(cString: name)
+                } else if className.hasPrefix("AppleEthernet") ||
+                          IOObjectConformsTo(child, "IONetworkController") != 0 {
+                    // Apple's in-kernel driver (AppleEthernetRL on macOS 27+).
+                    info.driver = className
                 }
             }
             if let status = property(child, "IOLinkStatus") as? Int {
@@ -150,6 +170,26 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
 
     private var timer: Timer?
     private var openedSettings = false
+    private var pendingUninstall = false
+    private static let modeKey = "driverMode"
+
+    /// macOS 27 ships AppleEthernetRL, an in-kernel driver for the Realtek
+    /// RTL8125/8126/8127 (PCI 10ec:8124-8127). When it is there, this
+    /// driver is only needed for jumbo frames, so the app leaves the card to
+    /// macOS unless the user asks otherwise.
+    static let appleDriverPath = "/System/Library/Extensions/IONetworkingFamily.kext/Contents/PlugIns/AppleEthernetRL.kext"
+    var hasAppleDriver: Bool {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 &&
+        FileManager.default.fileExists(atPath: Self.appleDriverPath)
+    }
+
+    var mode: DriverMode? {
+        get { UserDefaults.standard.string(forKey: Self.modeKey).flatMap(DriverMode.init(rawValue:)) }
+        set {
+            if let v = newValue { UserDefaults.standard.set(v.rawValue, forKey: Self.modeKey) }
+            else { UserDefaults.standard.removeObject(forKey: Self.modeKey) }
+        }
+    }
 
     /// macOS only activates a system extension from an app located in
     /// /Applications. Catch that before sysextd does, with a clearer message.
@@ -183,12 +223,56 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.refreshHardware()
         }
+        if hasAppleDriver && mode != .jumbo {
+            // Let the installed state decide: an upgrade from macOS 26 has
+            // this driver active and gets a choice; a fresh install leaves
+            // the card to macOS.
+            state = .checking
+            queryProperties()
+            return
+        }
         // Always submit an activation request: sysextd completes it at once
         // when this exact version is already active, and runs the
         // replacement flow when the app carries a newer driver. Only asking
         // for properties would leave an older driver in place after an
         // upgrade.
         activate()
+    }
+
+    private func queryProperties() {
+        let request = OSSystemExtensionRequest.propertiesRequest(
+            forExtensionWithIdentifier: Self.dextIdentifier, queue: .main)
+        request.delegate = self
+        OSSystemExtensionManager.shared.submitRequest(request)
+    }
+
+    /// macOS 27+: keep Apple's driver. Removes ours if it is installed.
+    func chooseSystemDriver(installed: Bool) {
+        mode = .system
+        if installed { deactivate() } else { state = .systemDriver }
+    }
+
+    /// macOS 27+: install this driver (jumbo frames).
+    func chooseJumboDriver() {
+        mode = .jumbo
+        activate()
+    }
+
+    /// Remove the driver, forget the settings and move the app to the Trash.
+    func uninstallCompletely(installed: Bool) {
+        pendingUninstall = true
+        mode = nil
+        if installed { deactivate() } else { finishUninstall() }
+    }
+
+    private func finishUninstall() {
+        timer?.invalidate()
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "net.wizzz.RTL8127App")
+        let app = Bundle.main.bundleURL
+        NSWorkspace.shared.recycle([app]) { _, error in
+            if let error { NSLog("RTL8127App: could not move the app to the Trash: %@", error.localizedDescription) }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
     }
 
     func refreshHardware() {
@@ -205,7 +289,7 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     }
 
     func deactivate() {
-        state = .installing
+        state = .removing
         let request = OSSystemExtensionRequest.deactivationRequest(
             forExtensionWithIdentifier: Self.dextIdentifier, queue: .main)
         request.delegate = self
@@ -217,6 +301,19 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     }
 
     // MARK: OSSystemExtensionRequestDelegate
+
+    func request(_ request: OSSystemExtensionRequest, foundProperties properties: [OSSystemExtensionProperties]) {
+        let installed = properties.contains { $0.isEnabled && !$0.isUninstalling }
+        if !hasAppleDriver {
+            activate()
+        } else if installed {
+            // Upgraded from macOS 26 (or chose jumbo earlier and reset):
+            // ask, unless the user already picked the system driver.
+            if mode == .system { deactivate() } else { state = .choiceNeeded }
+        } else {
+            state = .systemDriver
+        }
+    }
 
     func request(_ request: OSSystemExtensionRequest,
                  actionForReplacingExtension existing: OSSystemExtensionProperties,
@@ -234,23 +331,34 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
 
     func request(_ request: OSSystemExtensionRequest,
                  didFinishWithResult result: OSSystemExtensionRequest.Result) {
+        if pendingUninstall { finishUninstall(); return }
+        let removed = (state == .removing)
         switch result {
         case .completed:
-            state = .enabled
+            state = removed ? (hasAppleDriver ? .systemDriver : .checking) : .enabled
+            if removed && !hasAppleDriver { queryProperties() }
         case .willCompleteAfterReboot:
             state = .rebootRequired
         @unknown default:
-            state = .enabled
+            state = removed ? .systemDriver : .enabled
         }
         refreshHardware()
     }
 
     func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
         let ns = error as NSError
+        if pendingUninstall { pendingUninstall = false }
         if ns.domain == OSSystemExtensionErrorDomain,
            ns.code == OSSystemExtensionError.requestCanceled.rawValue {
             // Typical for a deactivation request the user canceled.
             state = .enabled
+            return
+        }
+        if ns.domain == OSSystemExtensionErrorDomain,
+           ns.code == OSSystemExtensionError.extensionNotFound.rawValue,
+           hasAppleDriver {
+            // Deactivating something that is not installed: nothing to do.
+            state = .systemDriver
             return
         }
         state = .failed(error.localizedDescription)
@@ -286,6 +394,7 @@ struct StatusRow<Detail: View>: View {
 
 struct ContentView: View {
     @ObservedObject var manager: DriverManager
+    @State private var confirmUninstall = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -309,12 +418,24 @@ struct ContentView: View {
                     Button("Remove driver…") { manager.deactivate() }
                         .font(.footnote)
                 }
+                if manager.state == .enabled || manager.state == .systemDriver || manager.state == .choiceNeeded {
+                    Button("Uninstall completely…") { confirmUninstall = true }
+                        .font(.footnote)
+                }
             }
             .padding(.top, 4)
         }
         .padding(24)
         .frame(width: 520)
         .onAppear { manager.start() }
+        .confirmationDialog("Uninstall the RTL8127 driver?", isPresented: $confirmUninstall, titleVisibility: .visible) {
+            Button("Uninstall", role: .destructive) {
+                manager.uninstallCompletely(installed: manager.state != .systemDriver)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the driver and moves this app to the Trash. On macOS 27 and later the card keeps working with the macOS driver.")
+        }
     }
 
     // Step 1: the extension itself.
@@ -335,6 +456,28 @@ struct ContentView: View {
             StatusRow(icon: "arrow.down.circle", color: .blue, title: "Driver") {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Installing…") }
                     .foregroundStyle(.secondary)
+            }
+        case .removing:
+            StatusRow(icon: "arrow.up.circle", color: .blue, title: "Driver") {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Removing…") }
+                    .foregroundStyle(.secondary)
+            }
+        case .choiceNeeded:
+            StatusRow(icon: "questionmark.circle.fill", color: .orange, title: "macOS includes a driver for this card") {
+                Text("macOS 27 and later drive Realtek RTL8125, RTL8126 and RTL8127 cards natively. You only need this driver for jumbo frames (MTU up to 9000). Which one do you want to use?")
+                HStack {
+                    Button("Use the macOS driver") { manager.chooseSystemDriver(installed: true) }
+                        .buttonStyle(.borderedProminent)
+                    Button("Keep this driver (jumbo frames)") { manager.chooseJumboDriver() }
+                }
+                .padding(.top, 4)
+            }
+        case .systemDriver:
+            StatusRow(icon: "checkmark.circle.fill", color: .green, title: "Using the macOS driver") {
+                Text("This driver is not installed; macOS drives the card itself. Install it only if you need jumbo frames (MTU up to 9000).")
+                    .foregroundStyle(.secondary)
+                Button("Install this driver (jumbo frames)…") { manager.chooseJumboDriver() }
+                    .padding(.top, 4)
             }
         case .waitingForApproval:
             StatusRow(icon: "exclamationmark.circle.fill", color: .orange, title: "Driver needs your approval") {
@@ -367,7 +510,13 @@ struct ContentView: View {
             StatusRow(icon: attached ? "checkmark.circle.fill" : "circle.dotted",
                       color: attached ? .green : .secondary,
                       title: "\(card.model) detected") {
-                if attached {
+                if card.usesAppleDriver {
+                    Text("Connected via \(card.location), handled by the macOS driver.")
+                        .foregroundStyle(.secondary)
+                } else if attached && manager.state == .systemDriver {
+                    Text("Connected via \(card.location), still attached to this driver. Unplug and replug the card so macOS takes it over.")
+                        .foregroundStyle(.secondary)
+                } else if attached {
                     Text("Connected via \(card.location), driver attached.")
                         .foregroundStyle(.secondary)
                 } else if manager.state == .enabled {
@@ -409,7 +558,7 @@ struct ContentView: View {
             }
         } else {
             StatusRow(icon: "network", color: .secondary, title: "Network") {
-                Text("Link status appears once the driver is attached to a card.")
+                Text("Link status appears once a driver is attached to a card.")
                     .foregroundStyle(.secondary)
             }
         }

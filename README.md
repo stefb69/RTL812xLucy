@@ -39,6 +39,13 @@ Practical reading: on macOS 27 you probably do not need this driver unless
 you want jumbo frames. On macOS 26.x it is the only option. Cards reporting
 PCI `10ec:0e10` are not covered by Apple's match and keep using this dext.
 
+The app handles this for you (0.2.28 and later). On macOS 27 and later a
+fresh install leaves the card to Apple's driver and offers "Install this
+driver (jumbo frames)" as an option; a Mac upgraded from macOS 26 with the
+driver already installed gets a one-time choice between the two. "Uninstall
+completely" removes the driver, forgets the choice and moves the app to the
+Trash.
+
 ## Status
 
 | Hardware | Status |
@@ -112,8 +119,9 @@ Jumbo frames: `sudo ifconfig en10 mtu 9000` (use your interface name), or
 set the MTU in System Settings, Network, Ethernet, Details, Hardware. The
 peer and the switch must be at 9000 too.
 
-To remove the driver, open the app and click "Remove driver". Then delete
-the app.
+To remove the driver, open the app and click "Uninstall completely": it
+removes the driver, forgets its settings and moves the app to the Trash.
+"Remove driver" only unloads the driver and keeps the app.
 
 ## Install (kext, advanced)
 
@@ -202,11 +210,11 @@ built from reports.
   FB24751820, FB24751838), see
   [docs/apple-feedback.md](docs/apple-feedback.md).
 
-- macOS 27: Apple's `AppleEthernetRL` takes the card at boot, this dext
-  takes it on a hot-plug (verified 9 Oct 2026: boot → Apple, replug → dext,
-  both at line rate). The two will alternate until the dext learns to step
-  aside; planned: on macOS 27+ the app only installs the dext when the user
-  asks for it (jumbo frames), otherwise Apple's driver is left alone.
+- macOS 27: Apple's `AppleEthernetRL` takes the card at boot and this dext
+  takes it on a hot-plug (both at line rate), so with both installed the
+  driver in use alternates. Since 0.2.28 the app installs this driver on
+  macOS 27+ only when you ask for it (jumbo frames); if you do, expect that
+  alternation, and unplug/replug the card after boot to get jumbo frames.
 
 ## Help wanted
 
