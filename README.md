@@ -31,8 +31,9 @@ runs on Apple's driver. Measured on the same RTL8127ATF SFP+ card
 (Apple's driver, macOS 27.0.1): 9.2 Gbit/s TX, 9.1 RX, 9.1 TX with 8 streams,
 9.4 RX with 8 streams, link medium and speed shown correctly. What it does
 not do: jumbo frames (maximum packet size 1518, MTU capped at 1500).
-Hot-plugging the card after boot may still hand it to this dext (higher
-probe score); see Known limitations.
+Hot-plugging the card after boot hands it to this dext instead (higher
+probe score, both candidates present), so the driver in use alternates
+between boots and replugs; see Known limitations.
 
 Practical reading: on macOS 27 you probably do not need this driver unless
 you want jumbo frames. On macOS 26.x it is the only option. Cards reporting
@@ -201,11 +202,11 @@ built from reports.
   FB24751820, FB24751838), see
   [docs/apple-feedback.md](docs/apple-feedback.md).
 
-- macOS 27: Apple's `AppleEthernetRL` takes the card at boot. Whether a
-  hot-plugged card goes to Apple's driver or to this dext depends on which
-  personality IOKit sees first; expect the two to alternate until the dext
-  learns to step aside (planned: drop `10ec:8125/8126/8127` from the match
-  list on macOS 27+, keep `10ec:0e10` and an opt-in for jumbo users).
+- macOS 27: Apple's `AppleEthernetRL` takes the card at boot, this dext
+  takes it on a hot-plug (verified 9 Oct 2026: boot → Apple, replug → dext,
+  both at line rate). The two will alternate until the dext learns to step
+  aside; planned: on macOS 27+ the app only installs the dext when the user
+  asks for it (jumbo frames), otherwise Apple's driver is left alone.
 
 ## Help wanted
 
