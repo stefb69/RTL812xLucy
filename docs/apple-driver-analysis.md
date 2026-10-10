@@ -35,6 +35,11 @@ also hands to OEMs:
 - `re_check_mac_version` (a function of Realtek's FreeBSD `if_re.c`).
 - Register and flag names `RE_IMR0_8125`, `RE_ISR_SYSTEM_ERR`,
   `RE_PERR_NUM_CAUSES` (`RE_` prefix as in Realtek's `if_rereg.h`).
+- `re_check_link_status`, `re_get_linkchg_intr`, `re_link_state_change`,
+  and FreeBSD idioms in the log formats: `sc.if_capenable` (the softc),
+  `ifm_status` / `ifm_active` (ifmedia), `if_re`-style link handling.
+- Descriptor paths named `enqueueRx8DWPackets` / `dequeueTx4DWLegacyPackets`
+  (32-byte and 16-byte descriptor formats, as in the BSD driver).
 
 Nothing from the Linux `r8127`/`r8125` naming that RTL812xLucy and this
 fork use (`rtl8125_*`, `mdio_direct_*`, `CFG_METHOD_*`, `HwSupp*`,
@@ -60,6 +65,11 @@ the PCI match. It owes nothing to RTL812xLucy or to this fork.
 
 ## What it does not do (measured on the RTL8127ATF SFP+ card)
 
+- No fiber/SFP+ awareness at all: no `fiber`, `SFP`, `SerDes` or `sds`
+  string anywhere in the driver. The SFP+ card works because the RTL8127ATF
+  firmware brings the 10GBASE-R SerDes up on its own; the driver treats the
+  link as copper and reports 10Gbase-T. Wake-on-LAN (magic packet, wake
+  ports, NIC proxy) is implemented.
 - No jumbo frames: `IOMaxPacketSize = 1518`, MTU capped at 1500.
 - Line rate otherwise: 9.2 Gbit/s TX, 9.1 RX, 9.1 TX with 8 streams, 9.4
   RX with 8 streams; media shown as 10Gbase-T.
