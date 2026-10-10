@@ -108,6 +108,14 @@ Two drivers live in this repository:
   now that the dext matches its throughput; build it from source if you need
   it (Intel Macs, hackintosh, or the upstream pull request).
 
+## Releases
+
+| Release | Package | For |
+|---|---|---|
+| [v1.1.2-rtl8127.beta3](https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta3) | `RTL8127-0.2.29.pkg` | **macOS 27 and later**, also fine on macOS 26. Knows about Apple's built-in Realtek driver: lets you choose, reminds you to replug the card at login if you prefer this driver. |
+| [v1.1.2-rtl8127.beta2](https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta2) | `RTL8127-0.2.27.pkg` | macOS 26.x. Same driver, app without the macOS 27 logic. |
+| v1.1.2-rtl8127.beta1 | kext zip | Historical, kext only (June 2026). |
+
 ## Install (dext, recommended)
 
 Download `RTL8127-*.pkg` from

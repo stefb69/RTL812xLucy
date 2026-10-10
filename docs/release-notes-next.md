@@ -1,4 +1,4 @@
-# Release notes: v1.1.2-rtl8127.beta2 (dext 0.2.29, 10 Oct 2026)
+# Release notes: v1.1.2-rtl8127.beta3 (dext 0.2.29, 10 Oct 2026)
 
 Releases are published by hand with the notarized installer built by
 `packaging/sign-and-notarize.sh`; CI only builds and checks. The text below
@@ -10,6 +10,11 @@ RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, as a signed and
 notarized DriverKit extension. Download `RTL8127-0.2.29.pkg`, run it, approve
 the driver once in System Settings, plug the card in. No recoveryOS, no
 Reduced Security, no `csrutil` changes.
+
+beta3 is the first release aware of **macOS 27**, which ships its own
+Realtek driver (see below). It installs and runs on macOS 26 too; the
+driver is the same as in beta2 (0.2.27), only the app changed. beta2 stays
+available for people who want to keep the macOS 26 behaviour.
 
 **Validated on hardware** (M5 Mac, macOS 26.6, RTL8127ATF SFP+ in a
 Thunderbolt enclosure, DAC to a 10G switch, Linux iperf3 peer):
@@ -98,4 +103,4 @@ the device until then).
 
 Checksums (SHA-256):
 
-- `RTL8127-0.2.27.pkg`: e94b2592aedaf4c2b31de470720a2966edf27cb0b3d016b75e25f72d31fa5861
+- `RTL8127-0.2.29.pkg`: c984ed8a26c8a113c1dd290b5269ad80946c07c6d8978ad03df83ceb65654d09
