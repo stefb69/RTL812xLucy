@@ -39,12 +39,16 @@ Practical reading: on macOS 27 you probably do not need this driver unless
 you want jumbo frames. On macOS 26.x it is the only option. Cards reporting
 PCI `10ec:0e10` are not covered by Apple's match and keep using this dext.
 
-The app handles this for you (0.2.28 and later). On macOS 27 and later a
-fresh install leaves the card to Apple's driver and offers "Install this
-driver (jumbo frames)" as an option; a Mac upgraded from macOS 26 with the
-driver already installed gets a one-time choice between the two. "Uninstall
-completely" removes the driver, forgets the choice and moves the app to the
-Trash.
+The app handles this for you (0.2.29 and later). On macOS 27 and later a
+fresh install leaves the card to Apple's driver and offers "Use this driver
+instead"; a Mac upgraded from macOS 26 with the driver already installed
+gets a one-time choice between the two. If you pick this driver, know that
+IOKit never displaces a driver that is already attached and Apple's kext
+matches first at boot: the card has to be unplugged and replugged once
+after each boot. The app registers itself as a login item, checks the card
+at login, and posts a notification when a replug is needed (nothing
+otherwise). "Uninstall completely" removes the driver, the login item, the
+settings, and moves the app to the Trash.
 
 ## Status
 
@@ -210,11 +214,11 @@ built from reports.
   FB24751820, FB24751838), see
   [docs/apple-feedback.md](docs/apple-feedback.md).
 
-- macOS 27: Apple's `AppleEthernetRL` takes the card at boot and this dext
-  takes it on a hot-plug (both at line rate), so with both installed the
-  driver in use alternates. Since 0.2.28 the app installs this driver on
-  macOS 27+ only when you ask for it (jumbo frames); if you do, expect that
-  alternation, and unplug/replug the card after boot to get jumbo frames.
+- macOS 27: Apple's `AppleEthernetRL` takes the card at boot and cannot be
+  displaced from user space (`kmutil unload -c` and `IOCatalogueTerminate`
+  are no-ops on a boot-collection kext). Using this driver on macOS 27
+  therefore means one unplug/replug after each boot; the app reminds you at
+  login. Details in [docs/apple-driver-analysis.md](docs/apple-driver-analysis.md).
 
 ## Help wanted
 

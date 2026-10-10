@@ -13,6 +13,8 @@ import SwiftUI
 import SystemExtensions
 import IOKit
 import AppKit
+import ServiceManagement
+import UserNotifications
 
 // MARK: - Extension state
 
@@ -35,7 +37,31 @@ enum DriverState: Equatable {
 /// What the user decided on a macOS that has Apple's Realtek driver.
 enum DriverMode: String {
     case system   // leave the card to macOS (default on a fresh install)
-    case jumbo    // install this driver (jumbo frames up to 9000)
+    case ours     // use this driver (jumbo frames; replug after each boot)
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "system": self = .system
+        case "ours", "jumbo": self = .ours   // "jumbo" was the 0.2.28 name
+        default: return nil
+        }
+    }
+}
+
+/// Detects a launch as a login item (SMAppService), where the app only has
+/// to check whether the card needs a replug and otherwise stays quiet.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    static var launchedAtLogin = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == kAEOpenApplication,
+           event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
+            AppDelegate.launchedAtLogin = true
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 
 // MARK: - Hardware state (from the IORegistry)
@@ -168,10 +194,20 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     @Published var state: DriverState = .checking
     @Published var cards: [CardInfo] = []
 
+    @Published var loginCheckEnabled: Bool = (SMAppService.mainApp.status == .enabled)
+
     private var timer: Timer?
     private var openedSettings = false
     private var pendingUninstall = false
+    private var replugNotified = false
     private static let modeKey = "driverMode"
+
+    /// macOS 27+: the card is held by Apple's driver while the user wants
+    /// this one. Only a hot-plug moves it over (IOKit never displaces an
+    /// attached driver, and Apple's kext matches first at boot).
+    var replugNeeded: Bool {
+        hasAppleDriver && mode == .ours && cards.contains { $0.usesAppleDriver }
+    }
 
     /// macOS 27 ships AppleEthernetRL, an in-kernel driver for the Realtek
     /// RTL8125/8126/8127 (PCI 10ec:8124-8127). When it is there, this
@@ -223,7 +259,16 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.refreshHardware()
         }
-        if hasAppleDriver && mode != .jumbo {
+        if hasAppleDriver && mode == .ours && AppDelegate.launchedAtLogin {
+            // Login check: give Thunderbolt a moment, then either remind
+            // the user to replug or leave quietly.
+            state = .enabled
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                self?.finishLoginCheck()
+            }
+            return
+        }
+        if hasAppleDriver && mode != .ours {
             // Let the installed state decide: an upgrade from macOS 26 has
             // this driver active and gets a choice; a fresh install leaves
             // the card to macOS.
@@ -249,19 +294,58 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     /// macOS 27+: keep Apple's driver. Removes ours if it is installed.
     func chooseSystemDriver(installed: Bool) {
         mode = .system
+        setLoginCheck(false)
         if installed { deactivate() } else { state = .systemDriver }
     }
 
-    /// macOS 27+: install this driver (jumbo frames).
-    func chooseJumboDriver() {
-        mode = .jumbo
+    /// macOS 27+: install this driver and check at every login whether the
+    /// card still needs a replug.
+    func chooseOurDriver() {
+        mode = .ours
+        setLoginCheck(true)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         activate()
+    }
+
+    func setLoginCheck(_ enabled: Bool) {
+        do {
+            if enabled { try SMAppService.mainApp.register() }
+            else if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
+        } catch {
+            NSLog("RTL8127App: login item %@ failed: %@", enabled ? "register" : "unregister", error.localizedDescription)
+        }
+        loginCheckEnabled = (SMAppService.mainApp.status == .enabled)
+    }
+
+    private func finishLoginCheck() {
+        refreshHardware()
+        if replugNeeded {
+            notifyReplug()
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+        } else {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func notifyReplug() {
+        guard !replugNotified else { return }
+        replugNotified = true
+        let content = UNMutableNotificationContent()
+        content.title = String(localized: "RTL8127: unplug and replug the card")
+        content.body = String(localized: "The macOS driver took the card at startup. Unplug and replug it to use the RTL8127 driver.")
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "replug", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { NSLog("RTL8127App: notification failed: %@", error.localizedDescription) }
+        }
     }
 
     /// Remove the driver, forget the settings and move the app to the Trash.
     func uninstallCompletely(installed: Bool) {
         pendingUninstall = true
         mode = nil
+        setLoginCheck(false)
         if installed { deactivate() } else { finishUninstall() }
     }
 
@@ -278,6 +362,10 @@ final class DriverManager: NSObject, ObservableObject, OSSystemExtensionRequestD
     func refreshHardware() {
         let found = Hardware.scan()
         if found != cards { cards = found }
+        // Card moved to this driver after a replug: the login check is done.
+        if AppDelegate.launchedAtLogin && replugNotified && !replugNeeded && cards.contains(where: { $0.usesOurDriver }) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSApp.terminate(nil) }
+        }
     }
 
     func activate() {
@@ -467,19 +555,19 @@ struct ContentView: View {
             }
         case .choiceNeeded:
             StatusRow(icon: "questionmark.circle.fill", color: .orange, title: "macOS includes a driver for this card") {
-                Text("macOS 27 and later drive Realtek RTL8125, RTL8126 and RTL8127 cards natively. You only need this driver for jumbo frames (MTU up to 9000). Which one do you want to use?")
+                Text("macOS 27 and later include their own driver for Realtek RTL8125, RTL8126 and RTL8127 cards. This driver adds jumbo frames (MTU up to 9000) and can replace it. The macOS driver still takes the card at startup, so you will have to unplug and replug the card after each boot; this app reminds you at login. Which one do you want to use?")
                 HStack {
                     Button("Use the macOS driver") { manager.chooseSystemDriver(installed: true) }
                         .buttonStyle(.borderedProminent)
-                    Button("Keep this driver (jumbo frames)") { manager.chooseJumboDriver() }
+                    Button("Use this driver") { manager.chooseOurDriver() }
                 }
                 .padding(.top, 4)
             }
         case .systemDriver:
             StatusRow(icon: "checkmark.circle.fill", color: .green, title: "Using the macOS driver") {
-                Text("This driver is not installed; macOS drives the card itself. Install it only if you need jumbo frames (MTU up to 9000).")
+                Text("This driver is not installed; macOS drives the card itself. Install it for jumbo frames (MTU up to 9000) or if the macOS driver gives you trouble.")
                     .foregroundStyle(.secondary)
-                Button("Install this driver (jumbo frames)…") { manager.chooseJumboDriver() }
+                Button("Use this driver instead…") { manager.chooseOurDriver() }
                     .padding(.top, 4)
             }
         case .waitingForApproval:
@@ -491,8 +579,18 @@ struct ContentView: View {
             }
         case .enabled:
             StatusRow(icon: "checkmark.circle.fill", color: .green, title: "Driver installed") {
-                Text("Loads automatically whenever a supported card is connected.")
-                    .foregroundStyle(.secondary)
+                if manager.hasAppleDriver {
+                    Text("The macOS driver takes the card at startup: unplug and replug the card after each boot to use this driver.")
+                        .foregroundStyle(.secondary)
+                    Toggle("Check at login and remind me", isOn: Binding(
+                        get: { manager.loginCheckEnabled },
+                        set: { manager.setLoginCheck($0) }))
+                        .toggleStyle(.checkbox)
+                        .font(.footnote)
+                } else {
+                    Text("Loads automatically whenever a supported card is connected.")
+                        .foregroundStyle(.secondary)
+                }
             }
         case .rebootRequired:
             StatusRow(icon: "arrow.clockwise.circle.fill", color: .orange, title: "Restart required") {
@@ -517,10 +615,14 @@ struct ContentView: View {
     @ViewBuilder private var cardRow: some View {
         if let card = manager.cards.first {
             let attached = card.driver != nil
-            StatusRow(icon: attached ? "checkmark.circle.fill" : "circle.dotted",
-                      color: attached ? .green : .secondary,
+            let replug = card.usesAppleDriver && manager.mode == .ours
+            StatusRow(icon: replug ? "exclamationmark.circle.fill" : (attached ? "checkmark.circle.fill" : "circle.dotted"),
+                      color: replug ? .orange : (attached ? .green : .secondary),
                       title: "\(card.model) detected") {
-                if card.usesAppleDriver {
+                if card.usesAppleDriver && manager.mode == .ours {
+                    Text("Connected via \(card.location), held by the macOS driver. Unplug and replug the card to switch to this driver.")
+                        .foregroundStyle(.secondary)
+                } else if card.usesAppleDriver {
                     Text("Connected via \(card.location), handled by the macOS driver.")
                         .foregroundStyle(.secondary)
                 } else if attached && manager.state == .systemDriver {
@@ -581,6 +683,7 @@ struct ContentView: View {
 
 @main
 struct RTL8127App: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var manager = DriverManager()
 
     var body: some Scene {

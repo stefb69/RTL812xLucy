@@ -1491,46 +1491,6 @@
         }
       }
     },
-    "macOS 27 and later drive Realtek RTL8125, RTL8126 and RTL8127 cards natively. You only need this driver for jumbo frames (MTU up to 9000). Which one do you want to use?": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 27 et ultérieur gèrent nativement les cartes Realtek RTL8125, RTL8126 et RTL8127. Ce pilote n'est utile que pour les trames jumbo (MTU jusqu'à 9000). Lequel voulez-vous utiliser ?"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 27 und neuer unterstützen Realtek RTL8125-, RTL8126- und RTL8127-Karten nativ. Dieser Treiber wird nur für Jumbo-Frames (MTU bis 9000) benötigt. Welchen möchten Sie verwenden?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 27 y posteriores admiten de forma nativa las tarjetas Realtek RTL8125, RTL8126 y RTL8127. Este controlador solo es necesario para tramas jumbo (MTU hasta 9000). ¿Cuál desea usar?"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 27 e successivi supportano nativamente le schede Realtek RTL8125, RTL8126 e RTL8127. Questo driver serve solo per i jumbo frame (MTU fino a 9000). Quale vuoi usare?"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 27 以降は Realtek RTL8125、RTL8126、RTL8127 カードを標準でサポートします。このドライバが必要なのはジャンボフレーム（MTU 最大 9000）を使う場合だけです。どちらを使いますか？"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 27 及更高版本原生支持 Realtek RTL8125、RTL8126 和 RTL8127 网卡。只有需要巨型帧（MTU 最高 9000）时才需要本驱动。您想使用哪一个？"
-          }
-        }
-      }
-    },
     "Use the macOS driver": {
       "localizations": {
         "fr": {
@@ -1571,46 +1531,6 @@
         }
       }
     },
-    "Keep this driver (jumbo frames)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Garder ce pilote (trames jumbo)"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Diesen Treiber behalten (Jumbo-Frames)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mantener este controlador (tramas jumbo)"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mantieni questo driver (jumbo frame)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このドライバを使い続ける（ジャンボフレーム）"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留本驱动（巨型帧）"
-          }
-        }
-      }
-    },
     "Using the macOS driver": {
       "localizations": {
         "fr": {
@@ -1647,86 +1567,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在使用 macOS 驱动"
-          }
-        }
-      }
-    },
-    "This driver is not installed; macOS drives the card itself. Install it only if you need jumbo frames (MTU up to 9000).": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ce pilote n'est pas installé ; macOS gère la carte lui-même. Installez-le seulement si vous avez besoin des trames jumbo (MTU jusqu'à 9000)."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dieser Treiber ist nicht installiert; macOS steuert die Karte selbst. Installieren Sie ihn nur, wenn Sie Jumbo-Frames (MTU bis 9000) benötigen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Este controlador no está instalado; macOS gestiona la tarjeta por sí mismo. Instálelo solo si necesita tramas jumbo (MTU hasta 9000)."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Questo driver non è installato; macOS gestisce la scheda da solo. Installalo solo se ti servono i jumbo frame (MTU fino a 9000)."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このドライバはインストールされていません。カードは macOS が直接制御しています。ジャンボフレーム（MTU 最大 9000）が必要な場合のみインストールしてください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本驱动未安装，网卡由 macOS 自行驱动。仅在需要巨型帧（MTU 最高 9000）时才安装。"
-          }
-        }
-      }
-    },
-    "Install this driver (jumbo frames)…": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Installer ce pilote (trames jumbo)…"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Diesen Treiber installieren (Jumbo-Frames)…"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Instalar este controlador (tramas jumbo)…"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Installa questo driver (jumbo frame)…"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このドライバをインストール（ジャンボフレーム）…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安装本驱动（巨型帧）…"
           }
         }
       }
@@ -1847,6 +1687,366 @@
           "stringUnit": {
             "state": "translated",
             "value": "驱动连接到网卡后将显示链路状态。"
+          }
+        }
+      }
+    },
+    "macOS 27 and later include their own driver for Realtek RTL8125, RTL8126 and RTL8127 cards. This driver adds jumbo frames (MTU up to 9000) and can replace it. The macOS driver still takes the card at startup, so you will have to unplug and replug the card after each boot; this app reminds you at login. Which one do you want to use?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 et ultérieur incluent leur propre pilote pour les cartes Realtek RTL8125, RTL8126 et RTL8127. Ce pilote ajoute les trames jumbo (MTU jusqu'à 9000) et peut le remplacer. Le pilote de macOS prend toutefois la carte au démarrage : il faudra débrancher et rebrancher la carte après chaque démarrage, cette app vous le rappelle à l'ouverture de session. Lequel voulez-vous utiliser ?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 und neuer bringen einen eigenen Treiber für Realtek RTL8125-, RTL8126- und RTL8127-Karten mit. Dieser Treiber ergänzt Jumbo-Frames (MTU bis 9000) und kann ihn ersetzen. Beim Start übernimmt jedoch weiterhin der Treiber von macOS die Karte; Sie müssen sie nach jedem Start ab- und wieder anstecken, diese App erinnert Sie bei der Anmeldung daran. Welchen möchten Sie verwenden?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 y posteriores incluyen su propio controlador para las tarjetas Realtek RTL8125, RTL8126 y RTL8127. Este controlador añade tramas jumbo (MTU hasta 9000) y puede sustituirlo. El controlador de macOS sigue tomando la tarjeta al arrancar, así que tendrá que desconectarla y volver a conectarla tras cada arranque; esta app se lo recuerda al iniciar sesión. ¿Cuál desea usar?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 e successivi includono un proprio driver per le schede Realtek RTL8125, RTL8126 e RTL8127. Questo driver aggiunge i jumbo frame (MTU fino a 9000) e può sostituirlo. All'avvio però la scheda viene presa dal driver di macOS: dovrai scollegarla e ricollegarla dopo ogni avvio, questa app te lo ricorda all'accesso. Quale vuoi usare?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 以降には Realtek RTL8125、RTL8126、RTL8127 カード用のドライバが標準で含まれています。このドライバはジャンボフレーム（MTU 最大 9000）に対応し、標準ドライバの代わりに使えます。ただし起動時には macOS のドライバがカードを先に取得するため、起動のたびにカードの抜き差しが必要です。このアプリがログイン時にお知らせします。どちらを使いますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 27 及更高版本自带 Realtek RTL8125、RTL8126 和 RTL8127 网卡的驱动。本驱动增加巨型帧支持（MTU 最高 9000），可以替代它。但开机时 macOS 驱动仍会先接管网卡，因此每次开机后需要拔插一次网卡，本应用会在登录时提醒您。您想使用哪一个？"
+          }
+        }
+      }
+    },
+    "Use this driver": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser ce pilote"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diesen Treiber verwenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar este controlador"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa questo driver"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このドライバを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用本驱动"
+          }
+        }
+      }
+    },
+    "Use this driver instead…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser ce pilote à la place…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stattdessen diesen Treiber verwenden…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar este controlador en su lugar…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa invece questo driver…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代わりにこのドライバを使う…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用本驱动…"
+          }
+        }
+      }
+    },
+    "This driver is not installed; macOS drives the card itself. Install it for jumbo frames (MTU up to 9000) or if the macOS driver gives you trouble.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce pilote n'est pas installé ; macOS gère la carte lui-même. Installez-le pour les trames jumbo (MTU jusqu'à 9000) ou si le pilote de macOS vous pose problème."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Treiber ist nicht installiert; macOS steuert die Karte selbst. Installieren Sie ihn für Jumbo-Frames (MTU bis 9000) oder wenn der Treiber von macOS Probleme macht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este controlador no está instalado; macOS gestiona la tarjeta por sí mismo. Instálelo para tramas jumbo (MTU hasta 9000) o si el controlador de macOS le da problemas."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo driver non è installato; macOS gestisce la scheda da solo. Installalo per i jumbo frame (MTU fino a 9000) o se il driver di macOS ti dà problemi."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このドライバはインストールされていません。カードは macOS が直接制御しています。ジャンボフレーム（MTU 最大 9000）が必要な場合や、macOS のドライバに問題がある場合にインストールしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本驱动未安装，网卡由 macOS 自行驱动。如需巨型帧（MTU 最高 9000）或 macOS 驱动有问题，可安装本驱动。"
+          }
+        }
+      }
+    },
+    "The macOS driver takes the card at startup: unplug and replug the card after each boot to use this driver.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le pilote de macOS prend la carte au démarrage : débranchez et rebranchez la carte après chaque démarrage pour utiliser ce pilote."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beim Start übernimmt der Treiber von macOS die Karte: Stecken Sie die Karte nach jedem Start ab und wieder an, um diesen Treiber zu verwenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El controlador de macOS toma la tarjeta al arrancar: desconéctela y vuelva a conectarla tras cada arranque para usar este controlador."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All'avvio la scheda viene presa dal driver di macOS: scollegala e ricollegala dopo ogni avvio per usare questo driver."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動時には macOS のドライバがカードを取得します。このドライバを使うには、起動のたびにカードを抜き差ししてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开机时 macOS 驱动会接管网卡：每次开机后请拔插一次网卡，以使用本驱动。"
+          }
+        }
+      }
+    },
+    "Check at login and remind me": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier à l'ouverture de session et me le rappeler"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bei der Anmeldung prüfen und mich erinnern"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobar al iniciar sesión y recordármelo"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Controlla all'accesso e ricordamelo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン時に確認して知らせる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录时检查并提醒我"
+          }
+        }
+      }
+    },
+    "Connected via %@, held by the macOS driver. Unplug and replug the card to switch to this driver.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branchée en %@, tenue par le pilote de macOS. Débranchez et rebranchez la carte pour passer à ce pilote."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden über %@, vom Treiber von macOS belegt. Stecken Sie die Karte ab und wieder an, um zu diesem Treiber zu wechseln."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectada por %@, retenida por el controlador de macOS. Desconecte y vuelva a conectar la tarjeta para cambiar a este controlador."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collegata via %@, tenuta dal driver di macOS. Scollega e ricollega la scheda per passare a questo driver."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で接続、macOS のドライバが保持しています。このドライバに切り替えるにはカードを抜き差ししてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 %@ 连接，当前由 macOS 驱动占用。请拔插一次网卡以切换到本驱动。"
+          }
+        }
+      }
+    },
+    "RTL8127: unplug and replug the card": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127 : débranchez et rebranchez la carte"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127: Karte ab- und wieder anstecken"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127: desconecte y vuelva a conectar la tarjeta"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127: scollega e ricollega la scheda"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127：カードを抜き差ししてください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RTL8127：请拔插一次网卡"
+          }
+        }
+      }
+    },
+    "The macOS driver took the card at startup. Unplug and replug it to use the RTL8127 driver.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le pilote de macOS a pris la carte au démarrage. Débranchez-la et rebranchez-la pour utiliser le pilote RTL8127."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Treiber von macOS hat die Karte beim Start übernommen. Stecken Sie sie ab und wieder an, um den RTL8127-Treiber zu verwenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El controlador de macOS tomó la tarjeta al arrancar. Desconéctela y vuelva a conectarla para usar el controlador RTL8127."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All'avvio la scheda è stata presa dal driver di macOS. Scollegala e ricollegala per usare il driver RTL8127."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動時に macOS のドライバがカードを取得しました。RTL8127 ドライバを使うには、カードを抜き差ししてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开机时 macOS 驱动接管了网卡。请拔插一次网卡以使用 RTL8127 驱动。"
           }
         }
       }
