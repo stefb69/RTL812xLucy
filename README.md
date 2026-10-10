@@ -195,10 +195,11 @@ built from reports.
 - The kext (not shipped anymore) is unsigned: Reduced Security and
   `csrutil disable` are required on Apple Silicon. Use the signed dext.
 - The link medium is reported as 10GBase-T even over SFP+ DAC or fiber.
-  macOS has no medium constant for those; it is a display issue only. On
-  macOS 26.x the dext's link speed and medium were not shown at all
-  (`ifconfig` answered an I/O error for the media query); macOS 27.0 fixed
-  that on Apple's side and now shows "10Gbase-T full-duplex".
+  macOS has no medium constant for those; it is a display issue only. With
+  this dext, `ifconfig` does not show the medium or link speed at all
+  (`SIOCGIFXMEDIA: Input/output error`, on macOS 26 and 27 alike): the
+  Skywalk legacy-Ethernet bridge does not forward a dext's media list. The
+  app shows the link speed itself. Apple's own driver reports it.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
   disabled for this chip).
 - The dext has no Wake on LAN.
