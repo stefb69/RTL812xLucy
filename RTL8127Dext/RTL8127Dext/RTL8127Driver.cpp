@@ -1039,6 +1039,10 @@ static void updateLinkStatus(RTL8127Driver *driver)
         else
             media = kIOUserNetworkMediaEthernet10BaseT;
 
+        /* The media constants carry no duplex option; report it from PHYstatus. */
+        media |= (status & FullDup) ? kIOUserNetworkMediaOptionFullDuplex
+                                    : kIOUserNetworkMediaOptionHalfDuplex;
+
         hw->rtl812xLinkOnPatch(tp);
 
         /* Restart the datapath. */
@@ -1829,9 +1833,18 @@ IOReturn RTL8127Driver::getSupportedMediaArray(MediaWord *mediaArray, uint32_t *
     if (!mediaCount)
         return kIOReturnBadArgument;
 
+    /*
+     * The framework calls this with a real array and *mediaCount == 0: the
+     * count is an output, not the array's capacity (the kernel side sizes its
+     * buffer for 256 media words, as SIOCGIFMEDIA's ifm_count shows for every
+     * Skywalk netif). Reading 0 as the capacity returned an empty list, which
+     * the kernel turned into EIO for "ifconfig enX" (SIOCGIFXMEDIA). A
+     * non-zero count still bounds the copy.
+     */
     uint32_t capacity = mediaArray ? *mediaCount : 0;
     if (mediaArray) {
-        uint32_t n = (*mediaCount < ivars->mediaCount) ? *mediaCount : ivars->mediaCount;
+        uint32_t limit = capacity ? capacity : ivars->mediaCount;
+        uint32_t n = (limit < ivars->mediaCount) ? limit : ivars->mediaCount;
         for (uint32_t i = 0; i < n; i++)
             mediaArray[i] = ivars->mediaArray[i];
         *mediaCount = n;
