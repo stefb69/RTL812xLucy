@@ -1383,6 +1383,26 @@ kern_return_t IMPL(RTL8127Driver, Start)
 
     Log("RTL8127: BAR index %u mapped, TxConfig 0x%08x", ivars->barIndex, txConfig);
 
+    /*
+     * ASPM L0s from the personality's "Driver Parameters" (enableAspmL0s, as
+     * the kext reads it): rtl812xInit() programs Link Control from tp->aspm.
+     * L1 is not offered: on boards where rtl8125_aspm_is_safe() is false (MAC
+     * OCP 0xc0b2) the chip drops it anyway, and Linux r8169 disables L1 there.
+     */
+    tp->aspm = 0;
+    {
+        OSDictionary *props = nullptr;
+
+        if (CopyProperties(&props) == kIOReturnSuccess && props) {
+            OSDictionary *params = OSDynamicCast(OSDictionary, props->getObject("Driver Parameters"));
+
+            if (params && params->getObject("enableAspmL0s") == kOSBooleanTrue)
+                tp->aspm |= kIOPCILinkControlASPMBitsL0s;
+            props->release();
+        }
+        Log("ASPM L0s %{public}s (requested)", (tp->aspm & kIOPCILinkControlASPMBitsL0s) ? "on" : "off");
+    }
+
     /* Full chip identification + bring-up, same path as the kext. */
     if (!hw->rtl812xInit()) {
         Log("rtl812xInit() failed (unknown chip?)");
