@@ -64,7 +64,9 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          STAMP="${{ github.ref_name }}-${{ github.sha }}"
+          # ref_name is "<n>/merge" on pull requests: no slash in file names
+          REF="${{ github.ref_name }}"
+          STAMP="${REF//\//-}-${{ github.sha }}"
           ( cd build/Release && \
             zip -ry "$GITHUB_WORKSPACE/dist/RTL812xLucy-$STAMP.kext.zip" \
                 RTL812xLucy.kext RTL812xLucy.kext.dSYM )
