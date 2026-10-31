@@ -285,8 +285,10 @@ bool RTL8127Driver::init()
 
 void RTL8127Driver::free()
 {
-    if (ivars)
+    if (ivars) {
+        OSSafeReleaseNULL(ivars->workQueue);
         IOSafeDeleteNULL(ivars->hw, RTL8127Hw, 1);
+    }
 
     IOSafeDeleteNULL(ivars, RTL8127Driver_IVars, 1);
     super::free();
@@ -1614,26 +1616,24 @@ kern_return_t IMPL(RTL8127Driver, Stop)
 {
     RTL8127Driver_IVars *iv = ivars;
 
-    if (iv) {
-        /*
-         * Dispatch sources must stay alive until their Cancel completion
-         * runs on the queue; releasing them right after Cancel() crashed the
-         * teardown in Cancel_Impl's block (crash reports from the upgrade
-         * path). Hand the release to the completion block instead.
-         */
-        if (iv->statsTimer) {
-            IOTimerDispatchSource *t = iv->statsTimer;
-            iv->statsTimer = nullptr;
-            t->SetEnable(false);
-            t->Cancel(^{ t->release(); });
-        }
+    if (!iv)
+        return Stop(provider, SUPERDISPATCH);
+
+    /*
+     * The stats timer and the interrupt source run on workQueue, and their
+     * Cancel() completes asynchronously there. Tearing down the rest (the
+     * queue, rings, BAR mapping) and calling super::Stop() before both
+     * completions ran crashed the dext in Cancel_Impl's block on every
+     * unplug (SIGSEGV at 0x30). The last completion finishes the teardown.
+     */
+    IOTimerDispatchSource *timer = iv->statsTimer;
+    IOInterruptDispatchSource *src = iv->intSource;
+    iv->statsTimer = nullptr;
+    iv->intSource = nullptr;
+    __block uint32_t pending = (timer ? 1 : 0) + (src ? 1 : 0);
+
+    void (^finish)(void) = ^{
         OSSafeReleaseNULL(iv->statsAction);
-        if (iv->intSource) {
-            IOInterruptDispatchSource *src = iv->intSource;
-            iv->intSource = nullptr;
-            src->SetEnable(false);
-            src->Cancel(^{ src->release(); });
-        }
         OSSafeReleaseNULL(iv->intAction);
 
         freeDmaBuffer(&iv->txRingMd, &iv->txRingDma);
@@ -1642,7 +1642,7 @@ kern_return_t IMPL(RTL8127Driver, Stop)
 
         OSSafeReleaseNULL(iv->barMap);
         OSSafeReleaseNULL(iv->barMd);
-        OSSafeReleaseNULL(iv->workQueue);
+        /* workQueue: released in free(), this block runs on it. */
 
         /*
          * Return any packets the rings still hold, then release the NDK
@@ -1683,8 +1683,30 @@ kern_return_t IMPL(RTL8127Driver, Stop)
             iv->pciDevice->Close(this, 0);
             iv->opened = false;
         }
+        Stop(provider, SUPERDISPATCH);
+    };
+
+    if (pending == 0) {
+        finish();
+        return kIOReturnSuccess;
     }
-    return Stop(provider, SUPERDISPATCH);
+    if (timer) {
+        timer->SetEnable(false);
+        timer->Cancel(^{
+            timer->release();
+            if (__atomic_sub_fetch(&pending, 1, __ATOMIC_ACQ_REL) == 0)
+                finish();
+        });
+    }
+    if (src) {
+        src->SetEnable(false);
+        src->Cancel(^{
+            src->release();
+            if (__atomic_sub_fetch(&pending, 1, __ATOMIC_ACQ_REL) == 0)
+                finish();
+        });
+    }
+    return kIOReturnSuccess;
 }
 
 #pragma mark - NDK 2.1 LOCALONLY interface
