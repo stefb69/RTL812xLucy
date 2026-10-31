@@ -569,7 +569,14 @@ void RTL8127Hw::rtl812xEnable()
 void RTL8127Hw::rtl812xDisable()
 {
     struct rtl8125_private *tp = &linuxData;
-    
+
+    /*
+     * The PLL power-down below does not reach the SFP SerDes: without this the
+     * fiber link stayed up through system sleep (switch port up, card powered).
+     * rtl812xEnable() re-runs the fiber PHY config on wake.
+     */
+    rtl8127DextSdsPhyReset(tp);
+
     rtl8125_irq_mask_and_ack(tp);
     rtl8125_hw_reset(tp);
 
