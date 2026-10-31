@@ -87,19 +87,27 @@ struct RtlDextRxDesc {
  */
 #define kMaxMtu         9000
 #define kRxBufferSize   9216
-#define kTxBufferSize   32768
-#define kTsoMaxPacket   (kTxBufferSize - 256)
+/*
+ * TX buffer sizes. The kernel raises a TX pool to at least 4096 buffers
+ * (kern_pbufpool_create), so the real pool is 4x kTxPoolPackets: 128 MB at
+ * 32 KB. With 66 KB buffers (264 MB) creation failed at boot and on hotplug,
+ * and its error path panicked the kernel (kern_pbufpool_destroy(NULL)).
+ * Without TSO a packet is at most a tagged jumbo frame: one 16 KB page.
+ */
+#define kTxBufferSizeTso   (32u * 1024u)
+#define kTxBufferSizeNoTso (16u * 1024u)
+#define kTsoMaxPacket   (kTxBufferSizeTso - 256)
 #define kRxPoolPackets  (kNumRxDesc + 512)
-/* TX packets in flight are bounded by the pool, not the ring: 512 x 32 KB
- * (16 MB) covers many milliseconds at 10 Gbit/s and halves the TSO packet
- * rate compared to 16 KB buffers. */
+/* TX packets in flight are bounded by the pool, not the ring. The pool is
+ * 1024 buffers requested (4096 created, see above); bytes in flight are
+ * capped separately below. */
 #define kTxPoolPackets  kNumTxDesc  /* one packet per ring slot: with 512 the
                                      * pool ran dry under 8 parallel TX streams
                                      * (511 in flight, 4.5 Gbit/s) */
 #define kNumTxQueues    4       /* one TX queue per service class: BE, BK, VI, VO */
 /*
- * Bytes allowed in flight in the TX ring. The ring holds 1024 packets of up
- * to 32 KB, i.e. 32 MB / ~27 ms of queue at 10 Gbit/s; with many parallel
+ * Bytes allowed in flight in the TX ring. With 32 KB buffers the ring held up
+ * to 32 MB / ~27 ms of queue at 10 Gbit/s (less with 16 KB); with many parallel
  * TCP streams that depth fills up, the netif's AQM overflows and the
  * streams collapse (8 x iperf3: 4.5 Gbit/s with thousands of retransmits,
  * 8.8 Gbit/s when the same streams are paced). A cap in packets does not
@@ -248,11 +256,13 @@ struct RTL8127Driver_IVars {
 
     /* Offloads the stack asked for (setHardwareAssists), TSO in particular. */
     bool tsoEnabled;
+    bool tsoAllowed;     /* "enableTSO" in Driver Parameters (default false) */
 
     /* One-shot warnings: a full hand-off FIFO means the framework thread
      * fell behind and we had to drop a packet/completion. Logged once per
      * direction to avoid spamming the datapath. */
     bool txDropWarned;
+    uint32_t txBufferSize;   /* actual TX pool buffer size (kTxBufferSizeTso or kTxBufferSizeNoTso) */
     bool rxDropWarned;
 };
 
@@ -279,7 +289,9 @@ bool RTL8127Driver::init()
      */
     ivars->mtu = 1500;
     ivars->hw->mtu = ivars->mtu;
-    ivars->tsoEnabled = true;
+    /* TSO is opt-in ("enableTSO" in Driver Parameters), see Start(). */
+    ivars->tsoEnabled = false;
+    ivars->tsoAllowed = false;
     return true;
 }
 
@@ -593,7 +605,7 @@ static uint32_t txDequeueAction(OSObject *target,
          * The VA/IOVA getters return the buffer base, not the frame start. */
         if (len < kMacHdrLen ||
             !rtl8127TxBufferView(pkt->getDataVirtualAddress(), pkt->getDataIOVirtualAddress(),
-                                dataOffset, len, kTxBufferSize, data)) {
+                                dataOffset, len, iv->txBufferSize, data)) {
             iv->txBadLen++;
             pkt->setCompletionStatus(kIOReturnBadArgument);
             if (!fifoPush(&iv->txDoneFifo[qidx], pkt))
@@ -603,6 +615,23 @@ static uint32_t txDequeueAction(OSObject *target,
         }
         uint8_t *frame = data.frame;
         uint64_t iova = data.iova;
+
+        /*
+         * Software VLAN hands us the 802.1Q tag in the frame, but the chip's
+         * IPv4 checksum/TSO engines only parse untagged frames (tagged ones
+         * left hyperblade counting IpInHdrErrors). Lift the tag out and let
+         * the chip insert it from the descriptor, as the kext does with the
+         * mbuf's tag: the 12 address bytes move up by 4, DMA starts 4 later.
+         */
+        uint32_t vlanOpts2 = 0;
+        if (len >= kMacHdrLen + 4 && frame[12] == 0x81 && frame[13] == 0x00) {
+            uint16_t tci = (uint16_t)(frame[14] << 8 | frame[15]);
+            memmove(frame + 4, frame, 12);
+            frame += 4;
+            iova += 4;
+            len -= 4;
+            vlanOpts2 = TxVlanTag | OSSwapInt16(tci);
+        }
 
         if (iv->oddLogged < 12) {
             const uint8_t *va = len >= 18 ? frame : nullptr;
@@ -668,6 +697,7 @@ static uint32_t txDequeueAction(OSObject *target,
         index = hw->txNextDescIndex;
         volatile RtlDextTxDesc *desc = &iv->txRing[index];
 
+        opts2 |= vlanOpts2;
         opts1 = ((len & kTxDescLenMask) | cmd | FirstFrag | LastFrag);
         if (index == kTxLastDesc)
             opts1 |= RingEnd;
@@ -1387,6 +1417,29 @@ kern_return_t IMPL(RTL8127Driver, Start)
 
     Log("RTL8127: BAR index %u mapped, TxConfig 0x%08x", ivars->barIndex, txConfig);
 
+    /* "Driver Parameters" from the personality: enableTSO opts in to TSO. */
+    {
+        OSDictionary *props = nullptr;
+
+        if (CopyProperties(&props) == kIOReturnSuccess && props) {
+            OSDictionary *params = OSDynamicCast(OSDictionary, props->getObject("Driver Parameters"));
+
+            /*
+             * TSO is off unless enableTSO = true. Over a VLAN macOS ignores
+             * tso_mtu (if_vlan.c does not copy it) and Skywalk drops the
+             * oversized TSO packets; at jumbo MTU the 11-bit MSS cuts
+             * segments to 2047 bytes (~9.55 Gb/s against 9.89 without TSO).
+             * Linux r8169 turns TSO off above MTU 1500.
+             */
+            if (params && params->getObject("enableTSO") == kOSBooleanTrue) {
+                ivars->tsoAllowed = true;
+                ivars->tsoEnabled = true;
+            }
+            props->release();
+        }
+        Log("TSO %{public}s by Driver Parameters", ivars->tsoAllowed ? "allowed" : "disabled");
+    }
+
     /* Full chip identification + bring-up, same path as the kext. */
     if (!hw->rtl812xInit()) {
         Log("rtl812xInit() failed (unknown chip?)");
@@ -1494,7 +1547,7 @@ kern_return_t IMPL(RTL8127Driver, Start)
 
         opts.packetCount = kTxPoolPackets;
         opts.bufferCount = kTxPoolPackets;
-        opts.bufferSize = kTxBufferSize;
+        opts.bufferSize = ivars->tsoAllowed ? kTxBufferSizeTso : kTxBufferSizeNoTso;
         ret = IOUserNetworkPacketBufferPool::CreateWithOptions(ivars->pciDevice,
                                                                "RTL8127TxPool",
                                                                &opts, &ivars->txPool);
@@ -1502,6 +1555,8 @@ kern_return_t IMPL(RTL8127Driver, Start)
             Log("tx packet pool creation failed: 0x%x", ret);
             goto fail;
         }
+        ivars->txBufferSize = opts.bufferSize;
+        Log("tx packet pool: %u x %u-byte buffers", opts.packetCount, opts.bufferSize);
 
         opts.packetCount = kRxPoolPackets;
         opts.bufferCount = kRxPoolPackets;
@@ -1584,6 +1639,12 @@ kern_return_t IMPL(RTL8127Driver, Start)
         ether_addr_t mac = {};
         memcpy(mac.octet, hw->currMacAddr.bytes, 6);
 
+        /*
+         * No SetSoftwareVlanSupport(): it did not lift the VLAN MTU cap (still
+         * parent - 4), and with it the kernel panicked in Skywalk while this
+         * dext started on a cold boot. kIOUserNetworkHWAssistSoftwareVlan alone
+         * lets macOS create VLANs on the interface.
+         */
         ret = registerEthernetInterface(mac, queues, n, ivars->txPool, ivars->rxPool);
         if (ret != kIOReturnSuccess) {
             Log("registerEthernetInterface failed: 0x%x", ret);
@@ -1600,7 +1661,8 @@ kern_return_t IMPL(RTL8127Driver, Start)
     }
 
 
-    Log("started: datapath ready (TSO, jumbo up to %u), waiting for interface enable", kMaxMtu);
+    Log("started: datapath ready (TSO %{public}s, jumbo up to %u), waiting for interface enable",
+        ivars->tsoAllowed ? "on" : "off", kMaxMtu);
 
     RegisterService();
     return kIOReturnSuccess;
@@ -1905,6 +1967,8 @@ IOReturn RTL8127Driver::setMaxTransferUnit(uint32_t mtu)
 
     ivars->mtu = mtu;
     hw->mtu = mtu;
+    if (ivars->tsoAllowed && mtu > ETH_DATA_LEN)
+        Log("MTU %u with enableTSO: TSO segments are clamped to %u bytes", mtu, MSS_MAX);
 
     /* Same bookkeeping as the kext setMaxPacketSize(). */
     tp->rms = mtu + VLAN_ETH_HLEN + ETH_FCS_LEN;
@@ -1933,9 +1997,11 @@ uint32_t RTL8127Driver::getHardwareAssists()
     uint32_t assists = (kIOUserNetworkHWAssistTxChecksumIPHdr |
                         kIOUserNetworkHWAssistTxChecksumTCP |
                         kIOUserNetworkHWAssistTxChecksumUDP |
-                        kIOUserNetworkHWAssistRxChecksum);
+                        kIOUserNetworkHWAssistRxChecksum |
+                        /* VLAN-sized frames; tags stay in the frame (RxVlan off). */
+                        kIOUserNetworkHWAssistSoftwareVlan);
 
-    if (ivars->tsoEnabled)
+    if (ivars->tsoEnabled && ivars->tsoAllowed)
         assists |= (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6);
     return assists;
 }
@@ -1943,7 +2009,8 @@ uint32_t RTL8127Driver::getHardwareAssists()
 IOReturn RTL8127Driver::setHardwareAssists(uint32_t hardwareAssists, uint32_t hardwareAssistsMask)
 {
     if (hardwareAssistsMask & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) {
-        ivars->tsoEnabled = (hardwareAssists & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) != 0;
+        ivars->tsoEnabled = ivars->tsoAllowed &&
+            (hardwareAssists & (kIOUserNetworkHWAssistTSO4 | kIOUserNetworkHWAssistTSO6)) != 0;
         Log("TSO %{public}s by the stack", ivars->tsoEnabled ? "enabled" : "disabled");
     }
     return kIOReturnSuccess;
