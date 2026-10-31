@@ -112,6 +112,7 @@ Two drivers live in this repository:
 
 | Release | Package | For |
 |---|---|---|
+| [v1.1.2-rtl8127.beta4](https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta4) | `RTL8127-0.2.30.pkg` | **Latest.** Same as beta3, plus `ifconfig` now shows the link medium and duplex with this driver. macOS 26 and 27. |
 | [v1.1.2-rtl8127.beta3](https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta3) | `RTL8127-0.2.29.pkg` | **macOS 27 and later**, also fine on macOS 26. Knows about Apple's built-in Realtek driver: lets you choose, reminds you to replug the card at login if you prefer this driver. |
 | [v1.1.2-rtl8127.beta2](https://github.com/stefb69/RTL812xLucy/releases/tag/v1.1.2-rtl8127.beta2) | `RTL8127-0.2.27.pkg` | macOS 26.x. Same driver, app without the macOS 27 logic. |
 | v1.1.2-rtl8127.beta1 | kext zip | Historical, kext only (June 2026). |
@@ -202,12 +203,13 @@ built from reports.
 
 - The kext (not shipped anymore) is unsigned: Reduced Security and
   `csrutil disable` are required on Apple Silicon. Use the signed dext.
-- The link medium is reported as 10GBase-T even over SFP+ DAC or fiber.
-  macOS has no medium constant for those; it is a display issue only. With
-  this dext, `ifconfig` does not show the medium or link speed at all
-  (`SIOCGIFXMEDIA: Input/output error`, on macOS 26 and 27 alike): the
-  Skywalk legacy-Ethernet bridge does not forward a dext's media list. The
-  app shows the link speed itself. Apple's own driver reports it.
+- Kext: the link medium is reported as 10GBase-T even over SFP+ DAC or
+  fiber (the kext media API has no constant for those; display only). The
+  dext reports 10Gbase-SR / 1000baseSX on SFP+, and since 0.2.30 `ifconfig`
+  shows the medium, duplex and supported media list (before that it failed
+  with `SIOCGIFXMEDIA: Input/output error`). The IORegistry link speed
+  (`IOLinkSpeed`) of the dext's interface still reads 0; the app shows the
+  link speed itself.
 - No thermal sensor readout on the RTL8127 (the `rtl812xtool -t` probe is
   disabled for this chip).
 - The dext has no Wake on LAN.

@@ -1,4 +1,4 @@
-# Release notes: v1.1.2-rtl8127.beta3 (dext 0.2.29, 10 Oct 2026)
+# Release notes: v1.1.2-rtl8127.beta4 (dext 0.2.30, 31 Oct 2026)
 
 Releases are published by hand with the notarized installer built by
 `packaging/sign-and-notarize.sh`; CI only builds and checks. The text below
@@ -7,14 +7,13 @@ is the release body.
 ---
 
 RTL8127 / RTL8127ATF 10GbE support for Apple Silicon Macs, as a signed and
-notarized DriverKit extension. Download `RTL8127-0.2.29.pkg`, run it, approve
+notarized DriverKit extension. Download `RTL8127-0.2.30.pkg`, run it, approve
 the driver once in System Settings, plug the card in. No recoveryOS, no
 Reduced Security, no `csrutil` changes.
 
-beta3 is the first release aware of **macOS 27**, which ships its own
-Realtek driver (see below). It installs and runs on macOS 26 too; the
-driver is the same as in beta2 (0.2.27), only the app changed. beta2 stays
-available for people who want to keep the macOS 26 behaviour.
+beta4 makes `ifconfig` show the link medium with this driver (see "Fixed
+in 0.2.30"). Like beta3 it knows about **macOS 27**, which ships its own
+Realtek driver (see below), and runs on macOS 26 too.
 
 **Validated on hardware** (M5 Mac, macOS 26.6, RTL8127ATF SFP+ in a
 Thunderbolt enclosure, DAC to a 10G switch, Linux iperf3 peer):
@@ -63,6 +62,15 @@ a 5-second safety net re-arms the rx ring if reception ever stalls again.
 If you installed 0.2.22, run the new package; the card may need a replug
 once to switch to the new driver instance.
 
+**Fixed in 0.2.30** (31 Oct 2026, contributed by Sudokamikaze, PR #10):
+`ifconfig enX` failed with `SIOCGIFXMEDIA: Input/output error` and showed
+no medium. macOS asks the driver for its media list without giving a
+capacity, and the driver answered with an empty list. It now returns the
+full list, and the active medium carries the duplex:
+`media: autoselect (10Gbase-SR <full-duplex>)`, supported media autoselect,
+10Gbase-SR and 1000baseSX on SFP+. Tested on macOS 26.7.1 and 27.2. The
+datapath is unchanged.
+
 **macOS 27 (0.2.29, 10 Oct 2026)**: macOS 27 ships its own driver for the
 Realtek RTL8125/8126/8127 (`AppleEthernetRL`): line rate, no jumbo frames
 (MTU capped at 1500), takes the card at every boot and cannot be displaced
@@ -92,7 +100,8 @@ drop is also confirmed by a second PHY read before the chip is reset.
 - Eight or more parallel TCP streams sending from the Mac at MTU 1500 top
   out around 4.5 Gbit/s (per-packet cost in the dext). Not an issue at MTU
   9000 or with up to four streams.
-- Link medium displayed as 10GBase-T over SFP+/DAC (cosmetic).
+- The IORegistry link speed of the interface (`IOLinkSpeed`) reads 0; the
+  app shows the link speed itself.
 - RTL8127A (RJ45) path ported but untested. Reports welcome.
 - No Wake on LAN. tcpdump only sees kernel-path traffic (the BPF tap API
   panics macOS 26 inside IOSkywalkFamily, so it is not used).
@@ -103,4 +112,4 @@ the device until then).
 
 Checksums (SHA-256):
 
-- `RTL8127-0.2.29.pkg`: c984ed8a26c8a113c1dd290b5269ad80946c07c6d8978ad03df83ceb65654d09
+- `RTL8127-0.2.30.pkg`: e7773a4ae677641b01adda98fdc0c59d397a6169c944bb958825e13b98d773b0

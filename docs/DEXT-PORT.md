@@ -231,12 +231,18 @@ Linux (`ping -M do -s 8972`).
   sous la main), sans effet sur la fibre (SerDes forcé).
 
 - **Médias / vitesse de lien non affichés avec le dext** (macOS 26 et 27) :
-  `ifconfig enX` répond `SIOCGIFXMEDIA: Input/output error` et le nœud
-  `IOSkywalkLegacyEthernet` garde `IOLinkSpeed = 0`, `IOActiveMedium = ""`
-  malgré `reportLinkStatus()`. Le 9 oct. 2026 j'ai cru à un correctif de
-  macOS 27 : c'était en fait le kext Apple `AppleEthernetRL` qui tenait la
-  carte et publiait le média. Reste donc un point NDK à comprendre (ou à
-  signaler à Apple).
+  `ifconfig enX` répondait `SIOCGIFXMEDIA: Input/output error`. Le 9 oct.
+  2026 j'ai cru à un correctif de macOS 27 : c'était en fait le kext Apple
+  `AppleEthernetRL` qui tenait la carte et publiait le média. Vraie cause
+  trouvée par Sudokamikaze (PR #10, dext 0.2.30) : le framework appelle
+  `getSupportedMediaArray()` avec un tableau non NULL et `*mediaCount == 0`
+  (le compte est une sortie, pas la capacité) ; on renvoyait donc une liste
+  vide et le kernel répondait EIO. Un 0 vaut maintenant « pas de limite ».
+  Le média actif porte aussi l'option duplex (`kIOUserNetworkMediaOption
+  FullDuplex`/`HalfDuplex` selon PHYstatus). Vérifié le 31 oct. 2026 sur
+  macOS 27.2 : `media: autoselect (10Gbase-SR <full-duplex>)` et liste
+  autoselect / 10Gbase-SR / 1000baseSX. Le nœud `IOSkywalkLegacyEthernet`
+  garde en revanche `IOLinkSpeed = 0`, `IOActiveMedium = ""`.
 
 ## macOS 27 : driver Apple natif (9 oct. 2026)
 
