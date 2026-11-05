@@ -51,6 +51,11 @@
 			<true/>
 			<key>IOProbeScore</key>
 			<integer>6000</integer>
+			<key>Driver Parameters</key>
+			<dict>
+				<key>enableAspmL0s</key>
+				<true/>
+			</dict>
 		</dict>
 	</dict>
 </dict>
