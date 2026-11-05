@@ -179,6 +179,12 @@ void RTL8127Hw::applyRxMode()
         mcFilter[1] = mcFilter[0] = 0;
     }
     rxMode |= tp->rtl8125_rx_config | (RTL_R32(tp, RxConfig) & rtlChipInfos[tp->chipset].RxConfigMask);
+    /*
+     * No hardware VLAN strip: the dext never reads the descriptor's VLAN tag,
+     * and with software VLAN the stack expects the 802.1Q tag in the frame.
+     * Stripping delivered VLAN frames to the parent untagged.
+     */
+    rxMode &= ~(EnableInnerVlan | EnableOuterVlan);
     RTL_W32(tp, RxConfig, rxMode);
     RTL_W32(tp, MAR0, mcFilter[0]);
     RTL_W32(tp, MAR1, mcFilter[1]);
@@ -519,7 +525,8 @@ bool RTL8127Hw::rtl812xInit()
 
     initMacAddr(tp);
     
-    tp->cp_cmd = (RTL_R16(tp, CPlusCmd) | RxChkSum);
+    /* RxVlan off: with software VLAN the stack expects 802.1Q tags in the frame. */
+    tp->cp_cmd = ((RTL_R16(tp, CPlusCmd) | RxChkSum) & ~RxVlan);
     
     intrMaskRxTx = (SYSErr | LinkChg | RxDescUnavail | TxOK | RxOK);
     intrMaskTimer = (SYSErr | LinkChg | RxDescUnavail | PCSTimeout | RxOK);
