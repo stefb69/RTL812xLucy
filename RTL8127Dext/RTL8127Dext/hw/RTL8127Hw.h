@@ -93,6 +93,9 @@ public:
     void configWrite16(UInt32 off, UInt16 v) { extendedConfigWrite16(off, v); }
 };
 
+/* rtl8127_fiber_port.cpp: SerDes reset, brings an RTL8127ATF fiber link down. */
+void rtl8127DextSdsPhyReset(struct rtl8125_private *tp);
+
 class RTL8127Hw
 {
 public:
