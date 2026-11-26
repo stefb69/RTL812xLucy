@@ -89,6 +89,7 @@ enum Hardware {
         0x8126: "RTL8126 (5GbE)",
         0x5000: "RTL8126 (5GbE)",
         0x8125: "RTL8125 (2.5GbE)",
+        0x8162: "RTL8162 (2.5GbE)",
         0x3000: "RTL8125 (2.5GbE)",
     ]
 
