@@ -244,7 +244,6 @@ struct RTL8127Driver_IVars {
     uint32_t mediaArray[8];
     uint32_t mediaCount;
     uint32_t currentMedia;
-    uint32_t mtu;
 
     /* Offloads the stack asked for (setHardwareAssists), TSO in particular. */
     bool tsoEnabled;
@@ -277,8 +276,7 @@ bool RTL8127Driver::init()
      * 22 bytes -- the chip then rejects every frame. Seen on hardware as
      * "rx pkts 0" with the runt/oversize tally climbing.
      */
-    ivars->mtu = 1500;
-    ivars->hw->mtu = ivars->mtu;
+    ivars->hw->mtu = 1500;
     ivars->tsoEnabled = true;
     return true;
 }
@@ -364,6 +362,20 @@ static void freeDmaBuffer(IOBufferMemoryDescriptor **md, IODMACommand **cmd)
 #pragma mark - TSO helpers
 
 static inline uint16_t bswap16(uint16_t v) { return __builtin_bswap16(v); }
+
+static bool tsoPayloadExceedsMSS(const uint8_t *frame, uint32_t len, uint32_t mss, bool ipv4)
+{
+    if (!mss || len <= kMacHdrLen + mss)
+        return false;
+
+    /* Use the same IP header layouts as prepareTSO4/6(). */
+    uint32_t tcpOff = kMacHdrLen + (ipv4 ? (frame[kMacHdrLen] & 0x0f) * 4 : kIPv6HdrLen);
+    if (len < tcpOff + sizeof(struct tcphdr))
+        return false;
+
+    uint32_t tcpHdrLen = (frame[tcpOff + 12] >> 4) * 4;  /* TCP data offset */
+    return tcpHdrLen >= sizeof(struct tcphdr) && len > tcpOff + tcpHdrLen + mss;
+}
 
 /*
  * The RTL8125/8127 giant-send engine wants the TCP checksum field preloaded
@@ -619,25 +631,24 @@ static uint32_t txDequeueAction(OSObject *target,
             }
         }
         /*
-         * TSO: same descriptor recipe as the kext outputStart(). A TSO
-         * packet that fits in one MTU-sized frame is sent as a plain
-         * checksum-offloaded frame. The chip's MSS field is 11 bits, so on
-         * jumbo MTUs the segment size is clamped -- smaller frames on the
-         * wire, still correct.
+         * A packet can go out as one frame if it fits both the local MTU
+         * and the requested TCP segment size. Check the requested MSS before
+         * clamping it to the hardware limit, so a single jumbo segment stays whole.
          */
         uint16_t mss = 0;
         IOUserNetworkPacketTSOFlags tso = 0;
         pkt->getTSOInfo(&mss, &tso);
 
-        if (iv->tsoEnabled && (tso & (kIOUserNetworkPacketTSOIPV4 | kIOUserNetworkPacketTSOIPV6)) &&
-            (len - kMacHdrLen) > iv->mtu) {
+        bool tso4 = (tso & kIOUserNetworkPacketTSOIPV4) != 0;
+        if (iv->tsoEnabled && (tso4 || (tso & kIOUserNetworkPacketTSOIPV6)) &&
+            (len - kMacHdrLen > hw->mtu || tsoPayloadExceedsMSS(frame, len, mss, tso4))) {
             uint32_t tcpOff;
             uint32_t segsz = mss;
 
             if (segsz == 0 || segsz > MSS_MAX)
                 segsz = MSS_MAX;
 
-            if (tso & kIOUserNetworkPacketTSOIPV4) {
+            if (tso4) {
                 tcpOff = prepareTSO4(frame);
                 cmd = (GiantSendv4 | (tcpOff << GTTCPHO_SHIFT));
             } else {
@@ -1925,7 +1936,6 @@ IOReturn RTL8127Driver::setMaxTransferUnit(uint32_t mtu)
     if (mtu < ETH_ZLEN || mtu > kMaxMtu)
         return kIOReturnUnsupported;
 
-    ivars->mtu = mtu;
     hw->mtu = mtu;
 
     /* Same bookkeeping as the kext setMaxPacketSize(). */
